@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Presence extends Model
 {
     protected $fillable = [
+        'date',
         'check_in', 
         'check_out', 
         'total_hours', 

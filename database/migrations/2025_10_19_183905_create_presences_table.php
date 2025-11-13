@@ -13,10 +13,11 @@ return new class extends Migration
     {
         Schema::create('presences', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('employee_id')->constrained('employees')->onDelete('cascade');
+            $table->date('date');
             $table->dateTime('check_in');
             $table->dateTime('check_out')->nullable();
             $table->float('total_hours')->nullable();
-            $table->foreignId('employee_id')->constrained('employees')->onDelete('cascade');
             $table->timestamps();
         });
     }
