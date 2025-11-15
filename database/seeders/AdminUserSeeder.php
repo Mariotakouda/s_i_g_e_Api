@@ -24,9 +24,5 @@ class AdminUserSeeder extends Seeder
 
             $this->command->warn("Un compte admin existe déjà.");
         }
-        
-         {
-            $this->call(AdminUserSeeder::class);
-        }
     }
 }

@@ -18,8 +18,9 @@
 //         //
 //     })->create();
 
-use App\Http\Middleware\AdminMiddleware;
 use Illuminate\Foundation\Application;
+use Illuminate\Foundation\Configuration\Exceptions;
+use App\Exceptions\Handler;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -30,7 +31,14 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function ($middleware) {
         $middleware->alias([
-            'admin' => AdminMiddleware::class, // alias "admin"
+            'admin' => \App\Http\Middleware\AdminMiddleware::class,
         ]);
     })
+    ->withExceptions(function (Exceptions $exceptions) {
+        // Ici tu peux configurer ton handler
+        $exceptions->report(function (\Throwable $e) {
+            // logique de reporting personnalisée
+        });
+    })
     ->create();
+

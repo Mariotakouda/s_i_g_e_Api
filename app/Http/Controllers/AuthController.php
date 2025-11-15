@@ -12,7 +12,8 @@ use Exception;
 class AuthController extends Controller
 {
 
-    public function register(Request $request) {
+    public function register(Request $request)
+    {
         try {
             $request->validate([
                 'name' => 'required|string|max:255',
@@ -30,14 +31,12 @@ class AuthController extends Controller
                 "message" => "Inscrit avec succès",
                 "description" => $user
             ], 201);
-
         } catch (ValidationException $e) {
             Log::error('Erreur de validation lors de l\'inscription: ' . $e->getMessage());
             return response()->json([
                 "message" => "Erreur de validation",
                 "errors" => $e->errors()
             ], 422);
-
         } catch (Exception $e) {
             Log::error('Erreur lors de l\'inscription: ' . $e->getMessage());
             return response()->json([
@@ -63,18 +62,19 @@ class AuthController extends Controller
                 ], 401);
             }
 
+            $token = $user->createToken('api_token')->plainTextToken;
+
             return response()->json([
                 "message" => "Connexion avec succès",
-                "description" => $user
+                "token" => $token,
+                "user" => $user
             ], 200);
-
         } catch (ValidationException $e) {
             Log::error('Erreur de validation lors de la connexion: ' . $e->getMessage());
             return response()->json([
                 "message" => "Erreur de validation",
                 "errors" => $e->errors()
             ], 422);
-
         } catch (Exception $e) {
             Log::error('Erreur lors de la connexion: ' . $e->getMessage());
             return response()->json([
