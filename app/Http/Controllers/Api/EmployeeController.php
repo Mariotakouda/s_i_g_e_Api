@@ -15,9 +15,9 @@ use Throwable;
 
 class EmployeeController extends Controller
 {
-    /**
-     * PROFIL EMPLOYÉ CONNECTÉ
-     */
+    
+    //  PROFIL EMPLOYÉ CONNECTÉ
+     
     public function me()
     {
         try {
@@ -39,9 +39,9 @@ class EmployeeController extends Controller
         }
     }
 
-    /**
-     * TÂCHES DE L'EMPLOYÉ
-     */
+    
+    //  TÂCHES DE L'EMPLOYÉ
+     
     public function myTasks()
     {
         try {
@@ -61,9 +61,9 @@ class EmployeeController extends Controller
         }
     }
 
-    /**
-     * PRÉSENCES
-     */
+    
+    //  PRÉSENCES
+     
     public function myPresences()
     {
         try {
@@ -83,9 +83,9 @@ class EmployeeController extends Controller
         }
     }
 
-    /**
-     * DEMANDES DE CONGÉ
-     */
+    
+    //  DEMANDES DE CONGÉ
+     
     public function myLeaves()
     {
         try {
@@ -105,9 +105,9 @@ class EmployeeController extends Controller
         }
     }
 
-    /**
-     * ANNONCES VISIBLES PAR L'EMPLOYÉ
-     */
+    
+    //  ANNONCES VISIBLES PAR L'EMPLOYÉ
+     
     public function myAnnouncements()
     {
         try {
@@ -130,9 +130,9 @@ class EmployeeController extends Controller
         }
     }
 
-    /**
-     * DEPARTEMENT DE L'EMPLOYÉ
-     */
+    
+    //  DEPARTEMENT DE L'EMPLOYÉ
+     
     public function myDepartments()
     {
         try {
@@ -146,9 +146,9 @@ class EmployeeController extends Controller
         }
     }
 
-    /**
-     * ROLES DE L'EMPLOYÉ
-     */
+    
+    //  ROLES DE L'EMPLOYÉ
+     
     public function myRoles()
     {
         try {
@@ -162,9 +162,9 @@ class EmployeeController extends Controller
         }
     }
 
-    /**
-     * HISTORIQUE DE DEMANDES DE CONGÉS
-     */
+    
+    //  HISTORIQUE DE DEMANDES DE CONGÉS
+     
     public function myLeaveRequests()
     {
         try {
@@ -180,10 +180,7 @@ class EmployeeController extends Controller
 
 
 
-    /* ============================================
-     * ========= ADMIN CRUD EMPLOYEES =============
-     * ============================================
-     */
+    // ADMIN CRUD EMPLOYEES
 
     // Liste des employés (admin)
     public function index()
