@@ -3,27 +3,26 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasOne;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Manager extends Model
 {
     protected $fillable = [
         'full_name', 
         'email', 
-        'phone', 
         'employee_id', 
         'department_id'
     ];
 
-    
-    public function employee(): HasOne
+    // Un manager appartient à un employé (via employee_id)
+    public function employee(): BelongsTo
     {
-        return $this->hasOne(Employee::class, 'id', 'employee_id');
+        return $this->belongsTo(Employee::class, 'employee_id');
     }
 
-    public function managedDepartments(): HasMany
+    // Un manager appartient à un département (via department_id)
+    public function department(): BelongsTo
     {
-        return $this->hasMany(Department::class, 'manager_id');
+        return $this->belongsTo(Department::class, 'department_id');
     }
 }

@@ -10,16 +10,37 @@ use Illuminate\Http\JsonResponse;
 class DepartmentController extends Controller
 {
     /**
-     * Affiche la liste de tous les départements
+     * Récupère une liste simple de tous les départements (ID et Nom)
+     * pour les listes déroulantes des formulaires.
+     */
+    public function list(): JsonResponse
+    {
+        try {
+            $departments = Department::select('id', 'name')
+                ->orderBy('name')
+                ->get();
+
+            return response()->json(['data' => $departments], 200);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'message' => 'Erreur lors de la récupération de la liste des départements.',
+                'error'   => $th->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Affiche la liste complète des départements
      */
     public function index(): JsonResponse
     {
         try {
-            return response()->json(Department::all(), 200);
+            $departments = Department::all();
+            return response()->json(['data' => $departments], 200);
         } catch (\Throwable $th) {
             return response()->json([
                 'message' => 'Erreur lors de la récupération des départements.',
-                'error' => $th->getMessage(), // ✅ affichage de l’erreur exacte
+                'error'   => $th->getMessage()
             ], 500);
         }
     }
@@ -31,17 +52,22 @@ class DepartmentController extends Controller
     {
         try {
             $validated = $request->validate([
-                'name' => 'required|string|unique:departments,name',
+                'name'        => 'required|string|unique:departments,name',
                 'description' => 'nullable|string',
             ]);
 
             $department = Department::create($validated);
 
-            return response()->json($department, 201);
+            return response()->json(['data' => $department], 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Erreur de validation',
+                'errors'  => $e->errors()
+            ], 422);
         } catch (\Throwable $th) {
             return response()->json([
                 'message' => 'Erreur lors de la création du département.',
-                'error' => $th->getMessage(), // ✅ affichage de l’erreur exacte
+                'error'   => $th->getMessage()
             ], 500);
         }
     }
@@ -53,11 +79,11 @@ class DepartmentController extends Controller
     {
         try {
             $department->load('employees');
-            return response()->json($department);
+            return response()->json(['data' => $department], 200);
         } catch (\Throwable $th) {
             return response()->json([
                 'message' => 'Erreur lors de la récupération du département.',
-                'error' => $th->getMessage(),
+                'error'   => $th->getMessage()
             ], 500);
         }
     }
@@ -69,16 +95,22 @@ class DepartmentController extends Controller
     {
         try {
             $validated = $request->validate([
-                'name' => 'sometimes|required|string|unique:departments,name,' . $department->id,
+                'name'        => 'sometimes|required|string|unique:departments,name,' . $department->id,
                 'description' => 'nullable|string',
             ]);
 
             $department->update($validated);
-            return response()->json($department);
+
+            return response()->json(['data' => $department], 200);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Erreur de validation',
+                'errors'  => $e->errors()
+            ], 422);
         } catch (\Throwable $th) {
             return response()->json([
                 'message' => 'Erreur lors de la mise à jour du département.',
-                'error' => $th->getMessage(),
+                'error'   => $th->getMessage()
             ], 500);
         }
     }
@@ -94,7 +126,7 @@ class DepartmentController extends Controller
         } catch (\Throwable $th) {
             return response()->json([
                 'message' => 'Erreur lors de la suppression du département.',
-                'error' => $th->getMessage(),
+                'error'   => $th->getMessage()
             ], 500);
         }
     }

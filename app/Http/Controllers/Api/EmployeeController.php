@@ -8,6 +8,7 @@ use App\Models\Task;
 use App\Models\Presence;
 use App\Models\LeaveRequest;
 use App\Models\Announcement;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -17,7 +18,7 @@ class EmployeeController extends Controller
 {
     
     //  PROFIL EMPLOYÉ CONNECTÉ
-     
+      
     public function me()
     {
         try {
@@ -41,7 +42,7 @@ class EmployeeController extends Controller
 
     
     //  TÂCHES DE L'EMPLOYÉ
-     
+      
     public function myTasks()
     {
         try {
@@ -63,7 +64,7 @@ class EmployeeController extends Controller
 
     
     //  PRÉSENCES
-     
+      
     public function myPresences()
     {
         try {
@@ -85,7 +86,7 @@ class EmployeeController extends Controller
 
     
     //  DEMANDES DE CONGÉ
-     
+      
     public function myLeaves()
     {
         try {
@@ -107,7 +108,7 @@ class EmployeeController extends Controller
 
     
     //  ANNONCES VISIBLES PAR L'EMPLOYÉ
-     
+      
     public function myAnnouncements()
     {
         try {
@@ -132,7 +133,7 @@ class EmployeeController extends Controller
 
     
     //  DEPARTEMENT DE L'EMPLOYÉ
-     
+      
     public function myDepartments()
     {
         try {
@@ -148,7 +149,7 @@ class EmployeeController extends Controller
 
     
     //  ROLES DE L'EMPLOYÉ
-     
+      
     public function myRoles()
     {
         try {
@@ -164,7 +165,7 @@ class EmployeeController extends Controller
 
     
     //  HISTORIQUE DE DEMANDES DE CONGÉS
-     
+      
     public function myLeaveRequests()
     {
         try {
@@ -182,15 +183,26 @@ class EmployeeController extends Controller
 
     // ADMIN CRUD EMPLOYEES
 
-    // Liste des employés (admin)
-    public function index()
+    /**
+     * Liste des employés (admin) - Utilisé par les formulaires de Manager, Task, etc.
+     */
+    public function index(): JsonResponse 
     {
         try {
-            $employees = Employee::with(['department', 'roles'])->paginate(15);
-            return response()->json($employees);
+            // 🎯 CORRECTION 1: Ajout de 'email' qui est nécessaire pour l'affichage dans le frontend React
+            $employees = Employee::select('id', 'first_name', 'last_name', 'email')
+                ->orderBy('last_name')
+                ->get();
+
+            // 🎯 CORRECTION 2: Envelopper les résultats dans la clé 'data' 
+            // pour correspondre à l'attente du frontend (employeesRes.data.data)
+            return response()->json(['data' => $employees], 200); 
         } catch (Throwable $e) {
-            Log::error("Erreur dans index(): ".$e->getMessage());
-            return response()->json(["message" => "Erreur interne"], 500);
+            Log::error("Erreur dans index(): " . $e->getMessage());
+
+            return response()->json([
+                "message" => "Erreur interne lors de la récupération des employés."
+            ], 500); 
         }
     }
 

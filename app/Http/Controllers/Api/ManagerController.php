@@ -2,110 +2,197 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Models\Manager;
-use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
+use App\Models\Manager;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class ManagerController extends Controller
 {
     /**
-     * Lister tous les managers
+     * Liste des managers avec pagination et recherche.
+     * CHARGE les relations 'employee' et 'department' requises par le frontend.
      */
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
         try {
-            $managers = Manager::with('employee:id,first_name,last_name', 'managedDepartments')->get();
-            return response()->json($managers, 200);
-        } catch (\Throwable $th) {
+            $query = Manager::query();
+
+            // 🎯 CRUCIAL : Charger les relations nécessaires
+            $query->with(['employee', 'department']);
+
+            // Gestion de la recherche
+            if ($request->has('search') && $request->search != '') {
+                $search = $request->input('search');
+                $query->whereHas('employee', function ($q) use ($search) {
+                    $q->where('first_name', 'like', "%{$search}%")
+                      ->orWhere('last_name', 'like', "%{$search}%")
+                      ->orWhere('email', 'like', "%{$search}%");
+                });
+            }
+
+            // Application de la pagination
+            $managers = $query->latest()->paginate(10); 
+            
+            return response()->json($managers);
+
+        } catch (Throwable $e) {
+            Log::error("Erreur dans ManagerController@index", [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
             return response()->json([
-                'message' => 'Erreur lors de la récupération des managers.',
-                'error' => $th->getMessage()
+                "message" => "Erreur interne lors du chargement des managers."
+            ], 500); 
+        }
+    }
+
+    /**
+     * Affichage d'un manager spécifique.
+     * 🎯 CORRECTION : Structure de réponse cohérente
+     */
+    public function show(Manager $manager): JsonResponse
+    {
+        try {
+            $manager->load(['employee', 'department']);
+            
+            Log::info("Manager show", [
+                'id' => $manager->id,
+                'employee_id' => $manager->employee_id,
+                'department_id' => $manager->department_id
+            ]);
+            
+            // 🎯 Retourner avec structure "data" pour cohérence
+            return response()->json([
+                'data' => $manager
+            ]);
+            
+        } catch (Throwable $e) {
+            Log::error("Erreur dans ManagerController@show", [
+                'manager_id' => $manager->id ?? 'N/A',
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                "message" => "Erreur interne lors du chargement du manager"
             ], 500);
         }
     }
 
     /**
-     * Créer un manager
+     * Création d'un nouveau manager.
      */
     public function store(Request $request): JsonResponse
     {
         try {
             $validated = $request->validate([
-                'full_name' => 'required|string|max:255',
-                'email' => 'required|email|unique:managers,email',
-                'phone' => 'nullable|string',
                 'employee_id' => 'required|exists:employees,id|unique:managers,employee_id',
                 'department_id' => 'nullable|exists:departments,id',
             ]);
 
             $manager = Manager::create($validated);
+            $manager->load(['employee', 'department']);
 
-            $manager->load('employee', 'managedDepartments');
+            Log::info("Manager créé", ['id' => $manager->id]);
 
-            return response()->json($manager, 201);
-        } catch (\Throwable $th) {
             return response()->json([
-                'message' => 'Erreur lors de la création du manager.',
-                'error' => $th->getMessage()
+                'data' => $manager,
+                'message' => 'Manager créé avec succès'
+            ], 201);
+            
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::warning("Validation échouée pour création manager", [
+                'errors' => $e->errors()
+            ]);
+            throw $e;
+            
+        } catch (Throwable $e) {
+            Log::error("Erreur dans ManagerController@store", [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                "message" => "Erreur interne lors de la création du manager."
             ], 500);
         }
     }
 
     /**
-     * Afficher un manager spécifique
-     */
-    public function show(Manager $manager): JsonResponse
-    {
-        try {
-            $manager->load(['employee', 'managedDepartments']);
-            return response()->json($manager, 200);
-        } catch (\Throwable $th) {
-            return response()->json([
-                'message' => 'Erreur lors de la récupération du manager.',
-                'error' => $th->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Mettre à jour un manager
+     * Mise à jour du manager (principalement le département géré).
+     * 🎯 CORRECTION : Validation et gestion des erreurs améliorées
      */
     public function update(Request $request, Manager $manager): JsonResponse
     {
         try {
+            Log::info("Tentative de mise à jour manager", [
+                'manager_id' => $manager->id,
+                'request_data' => $request->all()
+            ]);
+            
             $validated = $request->validate([
-                'full_name' => 'sometimes|required|string|max:255',
-                'email' => 'sometimes|required|email|unique:managers,email,' . $manager->id,
-                'phone' => 'nullable|string',
                 'department_id' => 'nullable|exists:departments,id',
             ]);
 
             $manager->update($validated);
+            $manager->load(['employee', 'department']);
 
-            $manager->load('employee', 'managedDepartments');
+            Log::info("Manager mis à jour", [
+                'id' => $manager->id,
+                'department_id' => $manager->department_id
+            ]);
 
-            return response()->json($manager, 200);
-        } catch (\Throwable $th) {
             return response()->json([
-                'message' => 'Erreur lors de la mise à jour du manager.',
-                'error' => $th->getMessage()
+                'data' => $manager,
+                'message' => 'Manager mis à jour avec succès'
+            ]);
+            
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::warning("Validation échouée pour mise à jour manager", [
+                'manager_id' => $manager->id,
+                'errors' => $e->errors()
+            ]);
+            throw $e;
+            
+        } catch (Throwable $e) {
+            Log::error("Erreur dans ManagerController@update", [
+                'manager_id' => $manager->id,
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                "message" => "Erreur interne lors de la mise à jour."
             ], 500);
         }
     }
 
     /**
-     * Supprimer un manager
+     * Suppression d'un manager.
      */
     public function destroy(Manager $manager): JsonResponse
     {
         try {
+            $managerId = $manager->id;
             $manager->delete();
-            return response()->json(null, 204);
-        } catch (\Throwable $th) {
+            
+            Log::info("Manager supprimé", ['id' => $managerId]);
+            
+            return response()->json(null, 204); 
+            
+        } catch (Throwable $e) {
+            Log::error("Erreur dans ManagerController@destroy", [
+                'manager_id' => $manager->id ?? 'N/A',
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
             return response()->json([
-                'message' => 'Erreur lors de la suppression du manager.',
-                'error' => $th->getMessage()
+                "message" => "Erreur interne lors de la suppression."
             ], 500);
         }
     }
