@@ -8,16 +8,18 @@ use App\Models\Task;
 use App\Models\Presence;
 use App\Models\LeaveRequest;
 use App\Models\Announcement;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class EmployeeController extends Controller
 {
     
-    //  PROFIL EMPLOYÉ CONNECTÉ
+    //  PROFIL EMPLOYÉ CONNECTÉ (OK)
       
     public function me()
     {
@@ -41,7 +43,7 @@ class EmployeeController extends Controller
     }
 
     
-    //  TÂCHES DE L'EMPLOYÉ
+    //  TÂCHES DE L'EMPLOYÉ (OK)
       
     public function myTasks()
     {
@@ -63,7 +65,7 @@ class EmployeeController extends Controller
     }
 
     
-    //  PRÉSENCES
+    //  PRÉSENCES (OK)
       
     public function myPresences()
     {
@@ -85,7 +87,7 @@ class EmployeeController extends Controller
     }
 
     
-    //  DEMANDES DE CONGÉ
+    //  DEMANDES DE CONGÉ (OK)
       
     public function myLeaves()
     {
@@ -107,7 +109,7 @@ class EmployeeController extends Controller
     }
 
     
-    //  ANNONCES VISIBLES PAR L'EMPLOYÉ
+    //  ANNONCES VISIBLES PAR L'EMPLOYÉ (OK)
       
     public function myAnnouncements()
     {
@@ -132,7 +134,7 @@ class EmployeeController extends Controller
     }
 
     
-    //  DEPARTEMENT DE L'EMPLOYÉ
+    //  DEPARTEMENT DE L'EMPLOYÉ (OK)
       
     public function myDepartments()
     {
@@ -148,7 +150,7 @@ class EmployeeController extends Controller
     }
 
     
-    //  ROLES DE L'EMPLOYÉ
+    //  ROLES DE L'EMPLOYÉ (OK)
       
     public function myRoles()
     {
@@ -164,7 +166,7 @@ class EmployeeController extends Controller
     }
 
     
-    //  HISTORIQUE DE DEMANDES DE CONGÉS
+    //  HISTORIQUE DE DEMANDES DE CONGÉS (OK)
       
     public function myLeaveRequests()
     {
@@ -184,18 +186,16 @@ class EmployeeController extends Controller
     // ADMIN CRUD EMPLOYEES
 
     /**
-     * Liste des employés (admin) - Utilisé par les formulaires de Manager, Task, etc.
+     * Liste des employés (admin) - OK
      */
     public function index(): JsonResponse 
     {
         try {
-            // 🎯 CORRECTION 1: Ajout de 'email' qui est nécessaire pour l'affichage dans le frontend React
+            // Renvoie les champs minimum nécessaires pour un listing
             $employees = Employee::select('id', 'first_name', 'last_name', 'email')
                 ->orderBy('last_name')
                 ->get();
 
-            // 🎯 CORRECTION 2: Envelopper les résultats dans la clé 'data' 
-            // pour correspondre à l'attente du frontend (employeesRes.data.data)
             return response()->json(['data' => $employees], 200); 
         } catch (Throwable $e) {
             Log::error("Erreur dans index(): " . $e->getMessage());
@@ -206,14 +206,17 @@ class EmployeeController extends Controller
         }
     }
 
-    // Création d'un employé
+    /**
+     * Création d'un employé (Méthode Admin) - OK
+     */
     public function store(Request $request)
     {
         try {
             $validated = $request->validate([
                 'first_name'    => 'required|string|max:255',
                 'last_name'     => 'required|string|max:255',
-                'email'         => 'required|email|unique:employees,email',
+                // L'email doit être unique dans les deux tables
+                'email'         => 'required|email|unique:employees,email|unique:users,email', 
                 'phone'         => 'nullable|string',
                 'contract_type' => 'required|string',
                 'hire_date'     => 'required|date|date_format:Y-m-d',
@@ -223,20 +226,41 @@ class EmployeeController extends Controller
                 'role_ids.*'    => 'exists:roles,id',
             ]);
 
-            $employee = Employee::create($validated);
+            // ÉTAPE 1 : Création du compte User pour l'authentification
+            $initialPassword = 'password1234'; 
+            $user = User::create([
+                'name'     => $validated['first_name'].' '.$validated['last_name'],
+                'email'    => $validated['email'],
+                'password' => Hash::make($initialPassword),
+                'role'     => 'employee',
+            ]);
 
+            // ÉTAPE 2 : Création de la fiche Employee (RH)
+            $employeeData = array_merge($validated, ['user_id' => $user->id]);
+            $employee = Employee::create($employeeData);
+
+            // ÉTAPE 3 : Synchronisation des rôles (si présent)
             if (!empty($validated['role_ids'])) {
                 $employee->roles()->sync($validated['role_ids']);
             }
 
-            return response()->json($employee, 201);
-        } catch (Throwable $e) {
+            $employee->load(['department', 'roles']);
+
+            return response()->json([
+                'message'  => 'Employé et compte utilisateur créés avec succès.',
+                'employee' => $employee
+            ], 201);
+        } catch (\Throwable $e) {
             Log::error("Erreur dans store(): ".$e->getMessage());
-            return response()->json(["message" => "Erreur interne", "error" => $e->getMessage()], 500);
+            return response()->json([
+                "message" => "Erreur interne",
+                "error"   => $e->getMessage()
+            ], 500);
         }
     }
 
-    // Affichage d'un employé
+
+    // Affichage d'un employé (OK)
     public function show(Employee $employee)
     {
         try {
@@ -248,14 +272,23 @@ class EmployeeController extends Controller
         }
     }
 
-    // Mise à jour d'un employé
+    /**
+     * Mise à jour d'un employé (Méthode Admin) - CORRIGÉ
+     */
     public function update(Request $request, Employee $employee)
     {
         try {
             $validated = $request->validate([
                 'first_name'    => 'sometimes|required|string|max:255',
                 'last_name'     => 'sometimes|required|string|max:255',
-                'email'         => 'sometimes|required|email|unique:employees,email,' . $employee->id,
+                // 🛠️ Correction : S'assurer que l'email est unique SAUF pour l'User lié actuel et l'Employee actuel
+                'email'         => [
+                    'sometimes',
+                    'required',
+                    'email',
+                    'unique:employees,email,' . $employee->id,
+                    'unique:users,email,' . ($employee->user_id ?? 'NULL'), // Exclut l'User ID de la vérification
+                ],
                 'phone'         => 'nullable|string',
                 'contract_type' => 'sometimes|required|string',
                 'hire_date'     => 'sometimes|required|date|date_format:Y-m-d',
@@ -265,23 +298,59 @@ class EmployeeController extends Controller
                 'role_ids.*'    => 'exists:roles,id',
             ]);
 
+            // ----------------------------------------------------
+            // 🎯 NOUVEAU : Synchronisation du compte User
+            // ----------------------------------------------------
+            $user = $employee->user;
+            
+            if ($user) {
+                // 1. Mise à jour de l'Email si elle est dans la requête
+                if (isset($validated['email']) && $user->email !== $validated['email']) {
+                    $user->email = $validated['email'];
+                }
+                
+                // 2. Mise à jour du Nom
+                if (isset($validated['first_name']) || isset($validated['last_name'])) {
+                    $user->name = ($validated['first_name'] ?? $employee->first_name) . ' ' . ($validated['last_name'] ?? $employee->last_name);
+                }
+                
+                // Sauvegarder les changements dans la table Users si nécessaire
+                if ($user->isDirty()) {
+                    $user->save();
+                }
+            }
+            // ----------------------------------------------------
+
             $employee->update($validated);
 
-            if (!empty($validated['role_ids'])) {
+            if (isset($validated['role_ids'])) { 
                 $employee->roles()->sync($validated['role_ids']);
             }
 
+            $employee->load(['department', 'roles']);
             return response()->json($employee);
+
         } catch (Throwable $e) {
             Log::error("Erreur dans update(): ".$e->getMessage());
             return response()->json(["message" => "Erreur interne", "error" => $e->getMessage()], 500);
         }
     }
 
-    // Suppression d'un employé
+    /**
+     * Suppression d'un employé (Méthode Admin) - CORRIGÉ
+     */
     public function destroy(Employee $employee)
     {
         try {
+            // ----------------------------------------------------
+            // 🎯 NOUVEAU : Suppression du compte User lié
+            // ----------------------------------------------------
+            if ($employee->user_id) {
+                // Utilise la relation définie dans le modèle Employee
+                $employee->user()->delete(); 
+            }
+            // ----------------------------------------------------
+
             $employee->delete();
             return response()->json(null, 204);
         } catch (Throwable $e) {
