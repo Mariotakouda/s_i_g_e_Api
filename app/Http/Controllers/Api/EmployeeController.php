@@ -111,29 +111,42 @@ class EmployeeController extends Controller
     
     //  ANNONCES VISIBLES PAR L'EMPLOYÉ (OK)
       
-    public function myAnnouncements()
+    public function myAnnouncements(): JsonResponse
     {
         try {
             $employee = Auth::user()->employee;
+            
             if (!$employee) {
                 return response()->json(["message" => "Profil employé introuvable."], 404);
             }
 
-            $announcements = Announcement::where(function ($q) use ($employee) {
-                $q->whereNull('employee_id')
-                  ->orWhere('employee_id', $employee->id);
+            $announcements = Announcement::where(function ($query) use ($employee) {
+                // 1. Annonces générales (pour tous)
+                $query->where('is_general', true)
+                    ->orWhere(function ($q) {
+                        $q->whereNull('employee_id')
+                          ->whereNull('department_id');
+                    });
+                
+                // 2. Annonces du département de l'employé
+                if ($employee->department_id) {
+                    $query->orWhere('department_id', $employee->department_id);
+                }
+                
+                // 3. Annonces personnelles pour cet employé
+                $query->orWhere('employee_id', $employee->id);
             })
-            ->latest()
+            ->with(['employee:id,first_name,last_name,email', 'department:id,name'])
+            ->orderBy('created_at', 'desc')
             ->get();
 
             return response()->json($announcements);
+            
         } catch (Throwable $e) {
-            Log::error("Erreur dans myAnnouncements(): ".$e->getMessage());
+            Log::error("Erreur dans myAnnouncements(): " . $e->getMessage());
             return response()->json(["message" => "Erreur interne"], 500);
         }
     }
-
-    
     //  DEPARTEMENT DE L'EMPLOYÉ (OK)
       
     public function myDepartments()

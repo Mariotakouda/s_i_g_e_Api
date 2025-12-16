@@ -45,6 +45,7 @@ class DepartmentController extends Controller
         }
     }
 
+
     /**
      * Crée un nouveau département
      */

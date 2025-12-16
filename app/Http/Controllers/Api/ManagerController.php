@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Employee;
 use App\Models\Manager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -84,43 +85,52 @@ class ManagerController extends Controller
     }
 
     /**
-     * Création d'un nouveau manager.
-     */
-    public function store(Request $request): JsonResponse
-    {
-        try {
-            $validated = $request->validate([
-                'employee_id' => 'required|exists:employees,id|unique:managers,employee_id',
-                'department_id' => 'nullable|exists:departments,id',
-            ]);
+ * Création d'un nouveau manager.
+ */
+public function store(Request $request): JsonResponse
+{
+    try {
+        $validated = $request->validate([
+            'employee_id'   => 'required|exists:employees,id|unique:managers,employee_id',
+            'department_id' => 'nullable|exists:departments,id',
+        ]);
 
-            $manager = Manager::create($validated);
-            $manager->load(['employee', 'department']);
+        // 🎯 2. CORRECTION CLÉ : Récupérer les données de l'employé
+        // Ceci fournit 'full_name' et 'email' requis par la DB Manager
+        $employee = Employee::findOrFail($validated['employee_id']);
 
-            Log::info("Manager créé", ['id' => $manager->id]);
+        // Ajout des champs obligatoires à la requête de création
+        $validated['full_name'] = $employee->first_name . ' ' . $employee->last_name;
+        $validated['email']     = $employee->email;
 
-            return response()->json([
-                'data' => $manager,
-                'message' => 'Manager créé avec succès'
-            ], 201);
-            
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            Log::warning("Validation échouée pour création manager", [
-                'errors' => $e->errors()
-            ]);
-            throw $e;
-            
-        } catch (Throwable $e) {
-            Log::error("Erreur dans ManagerController@store", [
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            
-            return response()->json([
-                "message" => "Erreur interne lors de la création du manager."
-            ], 500);
-        }
+        $manager = Manager::create($validated);
+        $manager->load(['employee', 'department']);
+
+        Log::info("Manager créé", ['id' => $manager->id]);
+
+        return response()->json([
+            'data'    => $manager,
+            'message' => 'Manager créé avec succès',
+        ], 201);
+
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        Log::warning("Validation échouée pour création manager", [
+            'errors' => $e->errors(),
+        ]);
+        throw $e;
+
+    } catch (\Throwable $e) {
+        Log::error("Erreur dans ManagerController@store", [
+            'message' => $e->getMessage(),
+            'trace'   => $e->getTraceAsString(),
+        ]);
+
+        return response()->json([
+            'message' => "Erreur interne lors de la création du manager.",
+        ], 500);
     }
+}
+
 
     /**
      * Mise à jour du manager (principalement le département géré).
