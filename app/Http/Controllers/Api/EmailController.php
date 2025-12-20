@@ -14,8 +14,9 @@ class EmailController extends Controller
     {
         // 1. Validation des données
         $validator = Validator::make($request->all(), [
-            'email' => 'required|email',
-            'name' => 'required|string|max:255',
+            'email'    => 'required|email',
+            'name'     => 'required|string|max:255',
+            'password' => 'required|string', // Ajoutez ceci si vous testez via ce contrôleur
         ]);
 
         if ($validator->fails()) {
@@ -25,16 +26,16 @@ class EmailController extends Controller
         $validatedData = $validator->validated();
 
         try {
-            // 2. Envoi de l'e-mail
-            // Mail::to() définit le destinataire. send() utilise votre Mailable.
-            Mail::to($validatedData['email'])
-                ->send(new UserWelcomeEmail($validatedData['name']));
+    Mail::to($validatedData['email'])
+        ->send(new UserWelcomeEmail(
+            $validatedData['name'],
+            $validatedData['password'],
+            $validatedData['email'] // On passe l'email ici aussi
+        ));
 
-            // 3. Réponse en cas de succès
-            return response()->json([
-                'message' => 'L\'e-mail de bienvenue a été mis en file d\'attente (ou envoyé) avec succès.',
-            ], 200);
-
+    return response()->json([
+        'message' => 'L\'e-mail de bienvenue a été envoyé avec succès.',
+    ], 200);
         } catch (\Exception $e) {
             // 4. Gestion des erreurs (ex: problème de connexion SMTP)
             // En développement, vous pouvez utiliser $e->getMessage() pour le débogage.

@@ -24,6 +24,7 @@ Route::post('/login', [AuthController::class, 'login']);
 // Routes authentifiées (employés)
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
+    Route::post('/update-password', [AuthController::class, 'updatePassword']);
 
     // Profil de l'employé connecté
     Route::prefix('me')->group(function () {

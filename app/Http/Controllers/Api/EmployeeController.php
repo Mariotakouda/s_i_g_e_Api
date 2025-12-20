@@ -9,17 +9,21 @@ use App\Models\Presence;
 use App\Models\LeaveRequest;
 use App\Models\Announcement;
 use App\Models\User;
+use App\Mail\UserWelcomeEmail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use Throwable;
 
 class EmployeeController extends Controller
 {
     
-    //  PROFIL EMPLOYÉ CONNECTÉ (OK)
+    //  PROFIL EMPLOYÉ CONNECTÉ (Identique)
       
     public function me()
     {
@@ -42,8 +46,7 @@ class EmployeeController extends Controller
         }
     }
 
-    
-    //  TÂCHES DE L'EMPLOYÉ (OK)
+    //  TÂCHES DE L'EMPLOYÉ (Identique)
       
     public function myTasks()
     {
@@ -64,8 +67,7 @@ class EmployeeController extends Controller
         }
     }
 
-    
-    //  PRÉSENCES (OK)
+    //  PRÉSENCES (Identique)
       
     public function myPresences()
     {
@@ -86,8 +88,7 @@ class EmployeeController extends Controller
         }
     }
 
-    
-    //  DEMANDES DE CONGÉ (OK)
+    //  DEMANDES DE CONGÉ (Identique)
       
     public function myLeaves()
     {
@@ -108,8 +109,7 @@ class EmployeeController extends Controller
         }
     }
 
-    
-    //  ANNONCES VISIBLES PAR L'EMPLOYÉ (OK)
+    //  ANNONCES VISIBLES PAR L'EMPLOYÉ (Identique)
       
     public function myAnnouncements(): JsonResponse
     {
@@ -121,19 +121,16 @@ class EmployeeController extends Controller
             }
 
             $announcements = Announcement::where(function ($query) use ($employee) {
-                // 1. Annonces générales (pour tous)
                 $query->where('is_general', true)
                     ->orWhere(function ($q) {
                         $q->whereNull('employee_id')
                           ->whereNull('department_id');
                     });
                 
-                // 2. Annonces du département de l'employé
                 if ($employee->department_id) {
                     $query->orWhere('department_id', $employee->department_id);
                 }
                 
-                // 3. Annonces personnelles pour cet employé
                 $query->orWhere('employee_id', $employee->id);
             })
             ->with(['employee:id,first_name,last_name,email', 'department:id,name'])
@@ -147,14 +144,12 @@ class EmployeeController extends Controller
             return response()->json(["message" => "Erreur interne"], 500);
         }
     }
-    //  DEPARTEMENT DE L'EMPLOYÉ (OK)
-      
+
     public function myDepartments()
     {
         try {
             $employee = Auth::user()->employee;
             if (!$employee) return response()->json(["message" => "Profil employé introuvable."], 404);
-
             return response()->json($employee->department);
         } catch (Throwable $e) {
             Log::error("Erreur dans myDepartments(): ".$e->getMessage());
@@ -162,15 +157,11 @@ class EmployeeController extends Controller
         }
     }
 
-    
-    //  ROLES DE L'EMPLOYÉ (OK)
-      
     public function myRoles()
     {
         try {
             $employee = Auth::user()->employee;
             if (!$employee) return response()->json(["message" => "Profil employé introuvable."], 404);
-
             return response()->json($employee->roles);
         } catch (Throwable $e) {
             Log::error("Erreur dans myRoles(): ".$e->getMessage());
@@ -178,15 +169,11 @@ class EmployeeController extends Controller
         }
     }
 
-    
-    //  HISTORIQUE DE DEMANDES DE CONGÉS (OK)
-      
     public function myLeaveRequests()
     {
         try {
             $employee = Auth::user()->employee;
             if (!$employee) return response()->json(["message" => "Profil employé introuvable."], 404);
-
             return response()->json($employee->leaveRequests);
         } catch (Throwable $e) {
             Log::error("Erreur dans myLeaveRequests(): ".$e->getMessage());
@@ -194,113 +181,96 @@ class EmployeeController extends Controller
         }
     }
 
+    // --- ADMIN CRUD ---
 
-
-    // ADMIN CRUD EMPLOYEES
-
-    /**
-     * Liste des employés (admin) - OK
-     */
     public function index(): JsonResponse 
     {
         try {
-            // Renvoie les champs minimum nécessaires pour un listing
             $employees = Employee::select('id', 'first_name', 'last_name', 'email')
                 ->orderBy('last_name')
                 ->get();
-
             return response()->json(['data' => $employees], 200); 
         } catch (Throwable $e) {
-            Log::error("Erreur dans index(): " . $e->getMessage());
-
-            return response()->json([
-                "message" => "Erreur interne lors de la récupération des employés."
-            ], 500); 
+            return response()->json(["message" => "Erreur interne"], 500); 
         }
     }
 
     /**
-     * Création d'un employé (Méthode Admin) - OK
+     * Méthode Store avec correction des 3 arguments
      */
     public function store(Request $request)
     {
+        $validated = $request->validate([
+            'first_name'    => 'required|string|max:255',
+            'last_name'     => 'required|string|max:255',
+            'email'         => 'required|email|unique:employees,email|unique:users,email',
+            'phone'         => 'nullable|string',
+            'contract_type' => 'required|string',
+            'hire_date'     => 'required|date|date_format:Y-m-d',
+            'salary_base'   => 'required|numeric',
+            'department_id' => 'nullable|exists:departments,id',
+            'role_ids'      => 'nullable|array',
+            'role_ids.*'    => 'exists:roles,id',
+        ]);
+
         try {
-            $validated = $request->validate([
-                'first_name'    => 'required|string|max:255',
-                'last_name'     => 'required|string|max:255',
-                // L'email doit être unique dans les deux tables
-                'email'         => 'required|email|unique:employees,email|unique:users,email', 
-                'phone'         => 'nullable|string',
-                'contract_type' => 'required|string',
-                'hire_date'     => 'required|date|date_format:Y-m-d',
-                'salary_base'   => 'required|numeric',
-                'department_id' => 'nullable|exists:departments,id',
-                'role_ids'      => 'nullable|array',
-                'role_ids.*'    => 'exists:roles,id',
-            ]);
+            return DB::transaction(function () use ($validated) {
+                $temporaryPassword = Str::random(10);
 
-            // ÉTAPE 1 : Création du compte User pour l'authentification
-            $initialPassword = 'password1234'; 
-            $user = User::create([
-                'name'     => $validated['first_name'].' '.$validated['last_name'],
-                'email'    => $validated['email'],
-                'password' => Hash::make($initialPassword),
-                'role'     => 'employee',
-            ]);
+                $user = User::create([
+                    'name'     => $validated['first_name'].' '.$validated['last_name'],
+                    'email'    => $validated['email'],
+                    'password' => Hash::make($temporaryPassword),
+                    'role'     => 'employee',
+                    'needs_password_change' => true,
+                ]);
 
-            // ÉTAPE 2 : Création de la fiche Employee (RH)
-            $employeeData = array_merge($validated, ['user_id' => $user->id]);
-            $employee = Employee::create($employeeData);
+                $employee = Employee::create(array_merge($validated, [
+                    'user_id' => $user->id
+                ]));
 
-            // ÉTAPE 3 : Synchronisation des rôles (si présent)
-            if (!empty($validated['role_ids'])) {
-                $employee->roles()->sync($validated['role_ids']);
-            }
+                if (!empty($validated['role_ids'])) {
+                    $employee->roles()->sync($validated['role_ids']);
+                }
 
-            $employee->load(['department', 'roles']);
+                // CORRECTION ICI : Ajout du 3ème argument ($user->email)
+                Mail::to($user->email)->send(new UserWelcomeEmail(
+                    $user->name, 
+                    $temporaryPassword, 
+                    $user->email
+                ));
 
-            return response()->json([
-                'message'  => 'Employé et compte utilisateur créés avec succès.',
-                'employee' => $employee
-            ], 201);
-        } catch (\Throwable $e) {
-            Log::error("Erreur dans store(): ".$e->getMessage());
-            return response()->json([
-                "message" => "Erreur interne",
-                "error"   => $e->getMessage()
-            ], 500);
+                return response()->json([
+                    'message' => 'Employé créé et email d\'invitation envoyé.',
+                    'employee' => $employee->load(['department', 'roles'])
+                ], 201);
+            });
+        } catch (Throwable $e) {
+            Log::error("Erreur création employé: ".$e->getMessage());
+            return response()->json(["message" => "Erreur lors de la création", "error" => $e->getMessage()], 500);
         }
     }
 
-
-    // Affichage d'un employé (OK)
     public function show(Employee $employee)
     {
         try {
             $employee->load(['department', 'roles', 'tasks', 'presences', 'leaveRequests']);
             return response()->json($employee);
         } catch (Throwable $e) {
-            Log::error("Erreur dans show(): ".$e->getMessage());
             return response()->json(["message" => "Erreur interne"], 500);
         }
     }
 
-    /**
-     * Mise à jour d'un employé (Méthode Admin) - CORRIGÉ
-     */
     public function update(Request $request, Employee $employee)
     {
         try {
             $validated = $request->validate([
                 'first_name'    => 'sometimes|required|string|max:255',
                 'last_name'     => 'sometimes|required|string|max:255',
-                // 🛠️ Correction : S'assurer que l'email est unique SAUF pour l'User lié actuel et l'Employee actuel
                 'email'         => [
-                    'sometimes',
-                    'required',
-                    'email',
+                    'sometimes', 'required', 'email',
                     'unique:employees,email,' . $employee->id,
-                    'unique:users,email,' . ($employee->user_id ?? 'NULL'), // Exclut l'User ID de la vérification
+                    'unique:users,email,' . ($employee->user_id ?? 'NULL'),
                 ],
                 'phone'         => 'nullable|string',
                 'contract_type' => 'sometimes|required|string',
@@ -311,64 +281,37 @@ class EmployeeController extends Controller
                 'role_ids.*'    => 'exists:roles,id',
             ]);
 
-            // ----------------------------------------------------
-            // 🎯 NOUVEAU : Synchronisation du compte User
-            // ----------------------------------------------------
-            $user = $employee->user;
-            
-            if ($user) {
-                // 1. Mise à jour de l'Email si elle est dans la requête
-                if (isset($validated['email']) && $user->email !== $validated['email']) {
-                    $user->email = $validated['email'];
+            return DB::transaction(function () use ($validated, $employee) {
+                $user = $employee->user;
+                if ($user) {
+                    if (isset($validated['email'])) $user->email = $validated['email'];
+                    if (isset($validated['first_name']) || isset($validated['last_name'])) {
+                        $user->name = ($validated['first_name'] ?? $employee->first_name) . ' ' . ($validated['last_name'] ?? $employee->last_name);
+                    }
+                    if ($user->isDirty()) $user->save();
                 }
-                
-                // 2. Mise à jour du Nom
-                if (isset($validated['first_name']) || isset($validated['last_name'])) {
-                    $user->name = ($validated['first_name'] ?? $employee->first_name) . ' ' . ($validated['last_name'] ?? $employee->last_name);
-                }
-                
-                // Sauvegarder les changements dans la table Users si nécessaire
-                if ($user->isDirty()) {
-                    $user->save();
-                }
-            }
-            // ----------------------------------------------------
 
-            $employee->update($validated);
+                $employee->update($validated);
+                if (isset($validated['role_ids'])) $employee->roles()->sync($validated['role_ids']);
 
-            if (isset($validated['role_ids'])) { 
-                $employee->roles()->sync($validated['role_ids']);
-            }
-
-            $employee->load(['department', 'roles']);
-            return response()->json($employee);
-
+                return response()->json($employee->load(['department', 'roles']));
+            });
         } catch (Throwable $e) {
-            Log::error("Erreur dans update(): ".$e->getMessage());
-            return response()->json(["message" => "Erreur interne", "error" => $e->getMessage()], 500);
+            return response()->json(["message" => "Erreur interne"], 500);
         }
     }
 
-    /**
-     * Suppression d'un employé (Méthode Admin) - CORRIGÉ
-     */
     public function destroy(Employee $employee)
     {
         try {
-            // ----------------------------------------------------
-            // 🎯 NOUVEAU : Suppression du compte User lié
-            // ----------------------------------------------------
-            if ($employee->user_id) {
-                // Utilise la relation définie dans le modèle Employee
+            if ($employee->user) {
                 $employee->user()->delete(); 
+            } else {
+                $employee->delete();
             }
-            // ----------------------------------------------------
-
-            $employee->delete();
-            return response()->json(null, 204);
+            return response()->json(["message" => "Employé supprimé"], 204);
         } catch (Throwable $e) {
-            Log::error("Erreur dans destroy(): ".$e->getMessage());
-            return response()->json(["message" => "Erreur interne"], 500);
+            return response()->json(["message" => "Erreur suppression"], 500);
         }
     }
 }
