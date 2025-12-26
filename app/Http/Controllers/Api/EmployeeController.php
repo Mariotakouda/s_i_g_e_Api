@@ -69,24 +69,34 @@ class EmployeeController extends Controller
 
     //  PRÉSENCES (Identique)
       
-    public function myPresences()
-    {
-        try {
-            $employee = Auth::user()->employee;
-            if (!$employee) {
-                return response()->json(["message" => "Profil employé introuvable."], 404);
-            }
-
-            $presences = Presence::where('employee_id', $employee->id)
-                ->latest()
-                ->get();
-
-            return response()->json($presences);
-        } catch (Throwable $e) {
-            Log::error("Erreur dans myPresences(): ".$e->getMessage());
-            return response()->json(["message" => "Erreur interne"], 500);
+   public function myPresences()
+{
+    try {
+        $user = Auth::user();
+        Log::info("🔍 myPresences - User:", ['id' => $user->id, 'email' => $user->email]);
+        
+        $employee = $user->employee;
+        
+        if (!$employee) {
+            Log::warning("⚠️ Aucun profil employé pour user " . $user->id);
+            return response()->json(["message" => "Profil employé introuvable."], 404);
         }
+        
+        Log::info("👤 Employee trouvé:", ['id' => $employee->id, 'name' => $employee->first_name]);
+
+        $presences = Presence::where('employee_id', $employee->id)
+            ->latest()
+            ->get();
+            
+        Log::info("📋 Présences trouvées:", ['count' => $presences->count()]);
+
+        return response()->json($presences);
+    } catch (Throwable $e) {
+        Log::error("❌ Erreur dans myPresences(): " . $e->getMessage());
+        Log::error($e->getTraceAsString());
+        return response()->json(["message" => "Erreur interne", "error" => $e->getMessage()], 500);
     }
+}
 
     //  DEMANDES DE CONGÉ (Identique)
       

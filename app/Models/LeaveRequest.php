@@ -21,6 +21,7 @@ class LeaveRequest extends Model
         'end_date',
         'status',
         'message',
+        'admin_comment',
     ];
 
     /**

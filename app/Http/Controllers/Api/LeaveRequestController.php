@@ -103,19 +103,37 @@ class LeaveRequestController extends Controller
     // 🎯 NOUVEAU : Méthodes d'action Approve/Reject pour l'Admin
     // ----------------------------------------------------
     
-    public function approve(LeaveRequest $leaveRequest): JsonResponse
-    {
-        $leaveRequest->update(['status' => 'approved']);
-        // Recharger avec l'employé pour la réponse React
-        $leaveRequest->load('employee'); 
-        return response()->json($leaveRequest);
+    public function approve(Request $request, LeaveRequest $leaveRequest): JsonResponse
+{
+    try {
+        $leaveRequest->update([
+            'status' => 'approved',
+            'admin_comment' => $request->input('admin_comment') // Récupère le commentaire
+        ]);
+
+        return response()->json([
+            'message' => 'Demande approuvée.',
+            'request' => $leaveRequest->load('employee')
+        ]);
+    } catch (Throwable $e) {
+        return response()->json(["message" => "Erreur interne"], 500);
     }
-    
-    public function reject(LeaveRequest $leaveRequest): JsonResponse
-    {
-        $leaveRequest->update(['status' => 'rejected']);
-        // Recharger avec l'employé pour la réponse React
-        $leaveRequest->load('employee');
-        return response()->json($leaveRequest);
+}
+
+public function reject(Request $request, LeaveRequest $leaveRequest): JsonResponse
+{
+    try {
+        $leaveRequest->update([
+            'status' => 'rejected',
+            'admin_comment' => $request->input('admin_comment') // Récupère le commentaire
+        ]);
+
+        return response()->json([
+            'message' => 'Demande rejetée.',
+            'request' => $leaveRequest->load('employee')
+        ]);
+    } catch (Throwable $e) {
+        return response()->json(["message" => "Erreur interne"], 500);
     }
+}
 }

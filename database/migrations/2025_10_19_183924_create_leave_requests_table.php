@@ -19,6 +19,7 @@ return new class extends Migration
             $table->date('end_date');
             $table->string('status')->default('pending');
             $table->text('message')->nullable();
+            $table->text('admin_comment')->nullable();
             $table->timestamps();
         });
     }

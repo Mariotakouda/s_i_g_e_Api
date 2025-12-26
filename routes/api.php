@@ -14,81 +14,74 @@ use App\Http\Controllers\Api\AnnouncementController;
 use App\Http\Controllers\Api\EmailController;
 use App\Http\Controllers\Api\ManagerController;
 
-// Définition d'une route POST simple pour l'envoi d'e-mail
-Route::post('/emails/send-welcome', [EmailController::class, 'sendWelcomeEmail']);
 
-// Routes publiques
+// Public Routes
+Route::post('/emails/send-welcome', [EmailController::class, 'sendWelcomeEmail']);
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 
-// Routes authentifiées (employés)
+
+// Authenticated Routes (Employees & Managers)
+
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/update-password', [AuthController::class, 'updatePassword']);
 
-    // Profil de l'employé connecté
+    // --- GESTION DES PRÉSENCES (Pointage Employé) ---
+    // Ces routes doivent être HORS de tout préfixe restrictif
+    Route::post('/presences/check-in', [PresenceController::class, 'store']);
+    Route::put('/presences/{presence}/check-out', [PresenceController::class, 'update']);
+    Route::get('/presences/stats', [PresenceController::class, 'stats']);
+
+    // --- PROFIL "ME" ---
     Route::prefix('me')->group(function () {
         Route::get('/', [EmployeeController::class, 'me']);
         Route::get('/tasks', [EmployeeController::class, 'myTasks']);
         Route::get('/presences', [EmployeeController::class, 'myPresences']);
         Route::get('/leave_requests', [EmployeeController::class, 'myLeaveRequests']);
-
-        // Soumission d'une demande de congé par l'employé
         Route::post('/leave_requests', [LeaveRequestController::class, 'store']);
-
         Route::get('/announcements', [AnnouncementController::class, 'fetchMyAnnouncements']);
         Route::get('/departments', [EmployeeController::class, 'myDepartments']);
         Route::get('/roles', [EmployeeController::class, 'myRoles']);
     });
+
+    // --- STATUT MANAGER & ANNONCES ---
+    Route::get('/check-manager-status', [AnnouncementController::class, 'checkManagerStatus']);
+    
+    Route::prefix('announcements')->group(function () {
+        Route::get('/', [AnnouncementController::class, 'index']);
+        Route::post('/', [AnnouncementController::class, 'store']);
+        Route::get('/{announcement}', [AnnouncementController::class, 'show']);
+        Route::put('/{announcement}', [AnnouncementController::class, 'update']);
+        Route::delete('/{announcement}', [AnnouncementController::class, 'destroy']);
+    });
 });
 
-// Routes admin (SANS préfixe pour garder les URLs existantes)
+/*
+|--------------------------------------------------------------------------
+| Admin Routes
+|--------------------------------------------------------------------------
+*/
 Route::middleware(['auth:sanctum', 'admin'])->group(function () {
-    // Departments
     Route::apiResource('departments', DepartmentController::class);
-
-    // Employees
     Route::apiResource('employees', EmployeeController::class);
-
-    // Roles
     Route::apiResource('roles', RoleController::class);
     Route::apiResource('employee_roles', EmployeeRoleController::class);
-
-    // Tasks
     Route::apiResource('tasks', TaskController::class);
-
-    // Managers
     Route::apiResource('managers', ManagerController::class);
+    
+    // On exclut store/update car ils sont gérés par les routes de pointage ci-dessus
+    Route::apiResource('presences', PresenceController::class)->except(['store', 'update']);
 
-    // Presences
-    Route::apiResource('presences', PresenceController::class);
-
-    // Announcements
-    Route::apiResource('announcements', AnnouncementController::class);
-
-    // ----------------------------------------------------
-    // 🎯 GESTION DES DEMANDES DE CONGÉ
-    // URL: /api/leave-requests (pour garder la cohérence avec vos autres routes)
-    // ----------------------------------------------------
-
-    // ⚠️ IMPORTANT: Les routes spécifiques DOIVENT être AVANT les routes avec paramètres
-    // Route spécifique (Statistiques) - DOIT ÊTRE EN PREMIER
+    // Leave Requests (Admin)
     Route::get('leave-requests/statistics', [LeaveRequestController::class, 'statistics'])
         ->name('admin.leave_requests.statistics');
-
-    // Liste (GET /api/leave-requests)
     Route::get('leave-requests', [AdminLeaveRequestController::class, 'index'])
         ->name('admin.leave_requests.index');
-
-    // Approuver (PUT /api/leave-requests/{id}/approve)
     Route::put('leave-requests/{leaveRequest}/approve', [AdminLeaveRequestController::class, 'approve'])
         ->name('admin.leave_requests.approve');
-        
-    // Rejeter (PUT /api/leave-requests/{id}/reject)
     Route::put('leave-requests/{leaveRequest}/reject', [AdminLeaveRequestController::class, 'reject'])
         ->name('admin.leave_requests.reject');
-
-    // Supprimer (DELETE /api/leave-requests/{id})
     Route::delete('leave-requests/{leaveRequest}', [AdminLeaveRequestController::class, 'destroy'])
         ->name('admin.leave_requests.delete');
 });

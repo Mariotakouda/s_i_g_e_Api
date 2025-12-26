@@ -6,133 +6,127 @@ use App\Models\Presence;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
 
 class PresenceController extends Controller
 {
     /**
-     * Afficher la liste des présences
+     * Statistiques de présence
      */
-    public function index(): JsonResponse
+    public function stats(Request $request): JsonResponse
     {
         try {
-            $presences = Presence::with('employee:id,first_name,last_name')
-                ->latest()
-                ->paginate(20);
+            $query = Presence::query();
 
-            return response()->json($presences);
-        } catch (\Throwable $th) {
+            // Si c'est un employé, il ne voit que ses propres stats
+            // Si c'est un admin, il voit tout par défaut (ou vous pouvez ajouter un filtre employee_id)
+            if ($request->user()->role === 'employee') {
+                $query->where('employee_id', $request->user()->employee->id);
+            }
+
+            $presences = $query->latest()->get();
+            $totalHours = $presences->sum('total_hours');
+
             return response()->json([
-                'message' => 'Erreur lors de la récupération des présences.',
-                'error' => $th->getMessage()
-            ], 500);
+                'total_hours' => round($totalHours, 2),
+                'days_present' => $presences->count(),
+                'history' => $presences
+            ]);
+        } catch (\Throwable $th) {
+            return response()->json(['error' => $th->getMessage()], 500);
         }
     }
 
     /**
-     * Enregistrer une nouvelle présence
+     * Liste globale (Vue Admin)
+     */
+    public function index(Request $request): JsonResponse
+{
+    try {
+        $query = Presence::with('employee:id,first_name,last_name');
+
+        // Filtrer par date spécifique (ex: 2025-12-25)
+        if ($request->has('date') && $request->date != '') {
+            $query->whereDate('date', $request->date);
+        }
+
+        // Filtrer par mois (ex: 12)
+        if ($request->has('month') && $request->month != '') {
+            $query->whereMonth('date', $request->month);
+        }
+
+        $presences = $query->latest('date')->paginate(20);
+
+        return response()->json($presences);
+    } catch (\Throwable $th) {
+        return response()->json(['message' => 'Erreur de filtrage'], 500);
+    }
+}
+
+    /**
+     * Pointage d'arrivée (Check-in)
      */
     public function store(Request $request): JsonResponse
     {
         try {
-            $validated = $request->validate([
-                'employee_id' => 'required|exists:employees,id',
-                'date' => 'nullable|date',
-                'check_in' => 'nullable|date',
-                'check_out' => 'nullable|date|after_or_equal:check_in',
-                'total_hours' => 'nullable|numeric',
-            ]);
+            $user = $request->user();
+            if (!$user->employee) {
+                return response()->json(['message' => 'Profil employé non trouvé'], 404);
+            }
 
-            // Définit automatiquement la date et l’heure d’entrée si absentes
-            $validated['date'] = $validated['date'] ?? date('Y-m-d');
-            $validated['check_in'] = $validated['check_in'] ?? date('Y-m-d H:i:s');
+            $employeeId = $user->employee->id;
+            $today = date('Y-m-d');
 
-            // Vérifie s’il existe déjà un check-in actif
-            $existing = Presence::where('employee_id', $validated['employee_id'])
+            $existing = Presence::where('employee_id', $employeeId)
+                ->whereDate('date', $today)
                 ->whereNull('check_out')
                 ->first();
 
             if ($existing) {
-                return response()->json([
-                    'message' => 'Un check-in est déjà actif pour cet employé.'
-                ], 409);
+                return response()->json(['message' => 'Un pointage est déjà en cours.'], 409);
             }
 
-            // Si check_out est présent, calcule automatiquement total_hours
-            if (!empty($validated['check_in']) && !empty($validated['check_out'])) {
-                $start = strtotime($validated['check_in']);
-                $end = strtotime($validated['check_out']);
-                $validated['total_hours'] = round(($end - $start) / 3600, 2);
-            }
-
-            $presence = Presence::create($validated);
+            $presence = Presence::create([
+                'employee_id' => $employeeId,
+                'date' => $today,
+                'check_in' => now(),
+                'status' => 'present'
+            ]);
 
             return response()->json($presence, 201);
         } catch (\Throwable $th) {
-            return response()->json([
-                'message' => 'Erreur lors de l’enregistrement de la présence.',
-                'error' => $th->getMessage()
-            ], 500);
+            return response()->json(['error' => $th->getMessage()], 500);
         }
     }
 
     /**
-     * Afficher une présence spécifique
-     */
-    public function show(Presence $presence): JsonResponse
-    {
-        try {
-            $presence->load('employee');
-            return response()->json($presence);
-        } catch (\Throwable $th) {
-            return response()->json([
-                'message' => 'Erreur lors de la récupération de la présence.',
-                'error' => $th->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Mettre à jour une présence (ajout du check_out)
+     * Pointage de sortie (Check-out)
      */
     public function update(Request $request, Presence $presence): JsonResponse
     {
         try {
-            $validated = $request->validate([
-                'check_out' => 'required|date|after_or_equal:check_in',
-            ]);
+            // Validation de la date de sortie (optionnel si géré auto par le serveur)
+            $checkOutTime = $request->check_out ? $request->check_out : now();
 
-            $presence->check_out = $validated['check_out'];
+            $presence->check_out = $checkOutTime;
 
-            // Calcul de la durée totale
-            $checkInTimestamp = strtotime($presence->check_in);
-            $checkOutTimestamp = strtotime($validated['check_out']);
-            $durationInHours = ($checkOutTimestamp - $checkInTimestamp) / 3600;
-
-            $presence->total_hours = round($durationInHours, 2);
+            // Calcul des heures
+            $checkIn = \Carbon\Carbon::parse($presence->check_in);
+            $checkOut = \Carbon\Carbon::parse($checkOutTime);
+            $presence->total_hours = round($checkIn->diffInMinutes($checkOut) / 60, 2);
+            
             $presence->save();
 
             return response()->json($presence);
         } catch (\Throwable $th) {
-            return response()->json([
-                'message' => 'Erreur lors de la mise à jour de la présence.',
-                'error' => $th->getMessage()
-            ], 500);
+            Log::error("Erreur update presence: " . $th->getMessage());
+            return response()->json(['message' => 'Erreur lors de la mise à jour'], 500);
         }
     }
 
-    /**
-     * Supprimer une présence
-     */
     public function destroy(Presence $presence): JsonResponse
     {
-        try {
-            $presence->delete();
-            return response()->json(null, 204);
-        } catch (\Throwable $th) {
-            return response()->json([
-                'message' => 'Erreur lors de la suppression de la présence.',
-                'error' => $th->getMessage()
-            ], 500);
-        }
+        $presence->delete();
+        return response()->json(null, 204);
     }
 }
