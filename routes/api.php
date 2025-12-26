@@ -28,7 +28,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/update-password', [AuthController::class, 'updatePassword']);
 
     // --- GESTION DES PRÉSENCES (Pointage Employé) ---
-    // Ces routes doivent être HORS de tout préfixe restrictif
     Route::post('/presences/check-in', [PresenceController::class, 'store']);
     Route::put('/presences/{presence}/check-out', [PresenceController::class, 'update']);
     Route::get('/presences/stats', [PresenceController::class, 'stats']);
@@ -36,6 +35,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // --- PROFIL "ME" ---
     Route::prefix('me')->group(function () {
         Route::get('/', [EmployeeController::class, 'me']);
+        Route::post('/photo', [EmployeeController::class, 'uploadPhoto']);
+        Route::delete('/photo', [EmployeeController::class, 'deletePhoto']);
         Route::get('/tasks', [EmployeeController::class, 'myTasks']);
         Route::get('/presences', [EmployeeController::class, 'myPresences']);
         Route::get('/leave_requests', [EmployeeController::class, 'myLeaveRequests']);
@@ -70,7 +71,6 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
     Route::apiResource('tasks', TaskController::class);
     Route::apiResource('managers', ManagerController::class);
     
-    // On exclut store/update car ils sont gérés par les routes de pointage ci-dessus
     Route::apiResource('presences', PresenceController::class)->except(['store', 'update']);
 
     // Leave Requests (Admin)

@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Facades\Storage;
 
 class Employee extends Model
 {
@@ -15,65 +16,55 @@ class Employee extends Model
         'last_name',
         'email',
         'phone',
+        'profile_photo',
         'contract_type',
         'hire_date',
         'salary_base',
         'department_id',
     ];
 
+    protected $appends = ['profile_photo_url'];
+
+    // Accessor pour l'URL complète de la photo
+    public function getProfilePhotoUrlAttribute()
+    {
+        if ($this->profile_photo) {
+        return asset('storage/' . $this->profile_photo);        }
+        return null;
+    }
+
     // ===== RELATIONS =====
 
-    /**
-     * L'utilisateur lié à cet employé
-     */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 
-    /**
-     * Département de l'employé
-     */
     public function department(): BelongsTo
     {
         return $this->belongsTo(Department::class);
     }
 
-    /**
-     * Les tâches de l'employé
-     */
     public function tasks(): HasMany
     {
         return $this->hasMany(Task::class);
     }
 
-    /**
-     * Les présences de l'employé
-     */
     public function presences(): HasMany
     {
         return $this->hasMany(Presence::class);
     }
 
-    /**
-     * Les demandes de congés de l'employé
-     */
     public function leaveRequests(): HasMany
     {
         return $this->hasMany(LeaveRequest::class);
     }
 
-    /**
-     * Les rôles de l'employé
-     */
     public function roles(): BelongsToMany
     {
         return $this->belongsToMany(Role::class, 'employee_role');
     }
 
-    /**
-     * Les annonces de l'employé
-     */
     public function announcements(): HasMany
     {
         return $this->hasMany(Announcement::class);

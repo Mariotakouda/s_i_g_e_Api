@@ -17,14 +17,13 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Throwable;
 
 class EmployeeController extends Controller
 {
     
-    //  PROFIL EMPLOYÉ CONNECTÉ (Identique)
-      
     public function me()
     {
         try {
@@ -46,8 +45,73 @@ class EmployeeController extends Controller
         }
     }
 
-    //  TÂCHES DE L'EMPLOYÉ (Identique)
-      
+    /**
+     * Upload photo de profil
+     */
+    public function uploadPhoto(Request $request)
+    {
+        try {
+            $employee = Auth::user()->employee;
+            
+            if (!$employee) {
+                return response()->json(["message" => "Profil employé introuvable."], 404);
+            }
+
+            $request->validate([
+                'photo' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048'
+            ]);
+
+            // Supprimer l'ancienne photo si elle existe
+            if ($employee->profile_photo) {
+                Storage::delete($employee->profile_photo);
+            }
+
+            // Stocker la nouvelle photo
+            $path = $request->file('photo')->store('profile_photos', 'public');
+            
+            $employee->profile_photo = $path;
+            $employee->save();
+
+            return response()->json([
+                "message" => "Photo de profil mise à jour avec succès",
+                "employee" => $employee
+            ]);
+
+        } catch (Throwable $e) {
+            Log::error("Erreur upload photo: ".$e->getMessage());
+            return response()->json(["message" => "Erreur lors de l'upload"], 500);
+        }
+    }
+
+    /**
+     * Supprimer photo de profil
+     */
+    public function deletePhoto()
+    {
+        try {
+            $employee = Auth::user()->employee;
+            
+            if (!$employee) {
+                return response()->json(["message" => "Profil employé introuvable."], 404);
+            }
+
+            if ($employee->profile_photo) {
+                Storage::delete($employee->profile_photo);
+                $employee->profile_photo = null;
+                $employee->save();
+            }
+
+            return response()->json([
+                "message" => "Photo de profil supprimée",
+                "employee" => $employee
+            ]);
+
+        } catch (Throwable $e) {
+            Log::error("Erreur suppression photo: ".$e->getMessage());
+            return response()->json(["message" => "Erreur lors de la suppression"], 500);
+        }
+    }
+
     public function myTasks()
     {
         try {
@@ -67,39 +131,35 @@ class EmployeeController extends Controller
         }
     }
 
-    //  PRÉSENCES (Identique)
-      
-   public function myPresences()
-{
-    try {
-        $user = Auth::user();
-        Log::info("🔍 myPresences - User:", ['id' => $user->id, 'email' => $user->email]);
-        
-        $employee = $user->employee;
-        
-        if (!$employee) {
-            Log::warning("⚠️ Aucun profil employé pour user " . $user->id);
-            return response()->json(["message" => "Profil employé introuvable."], 404);
-        }
-        
-        Log::info("👤 Employee trouvé:", ['id' => $employee->id, 'name' => $employee->first_name]);
-
-        $presences = Presence::where('employee_id', $employee->id)
-            ->latest()
-            ->get();
+    public function myPresences()
+    {
+        try {
+            $user = Auth::user();
+            Log::info("🔍 myPresences - User:", ['id' => $user->id, 'email' => $user->email]);
             
-        Log::info("📋 Présences trouvées:", ['count' => $presences->count()]);
+            $employee = $user->employee;
+            
+            if (!$employee) {
+                Log::warning("⚠️ Aucun profil employé pour user " . $user->id);
+                return response()->json(["message" => "Profil employé introuvable."], 404);
+            }
+            
+            Log::info("👤 Employee trouvé:", ['id' => $employee->id, 'name' => $employee->first_name]);
 
-        return response()->json($presences);
-    } catch (Throwable $e) {
-        Log::error("❌ Erreur dans myPresences(): " . $e->getMessage());
-        Log::error($e->getTraceAsString());
-        return response()->json(["message" => "Erreur interne", "error" => $e->getMessage()], 500);
+            $presences = Presence::where('employee_id', $employee->id)
+                ->latest()
+                ->get();
+                
+            Log::info("📋 Présences trouvées:", ['count' => $presences->count()]);
+
+            return response()->json($presences);
+        } catch (Throwable $e) {
+            Log::error("❌ Erreur dans myPresences(): " . $e->getMessage());
+            Log::error($e->getTraceAsString());
+            return response()->json(["message" => "Erreur interne", "error" => $e->getMessage()], 500);
+        }
     }
-}
 
-    //  DEMANDES DE CONGÉ (Identique)
-      
     public function myLeaves()
     {
         try {
@@ -119,8 +179,6 @@ class EmployeeController extends Controller
         }
     }
 
-    //  ANNONCES VISIBLES PAR L'EMPLOYÉ (Identique)
-      
     public function myAnnouncements(): JsonResponse
     {
         try {
@@ -196,7 +254,7 @@ class EmployeeController extends Controller
     public function index(): JsonResponse 
     {
         try {
-            $employees = Employee::select('id', 'first_name', 'last_name', 'email')
+            $employees = Employee::select('id', 'first_name', 'last_name', 'email', 'profile_photo')
                 ->orderBy('last_name')
                 ->get();
             return response()->json(['data' => $employees], 200); 
@@ -205,9 +263,6 @@ class EmployeeController extends Controller
         }
     }
 
-    /**
-     * Méthode Store avec correction des 3 arguments
-     */
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -243,7 +298,6 @@ class EmployeeController extends Controller
                     $employee->roles()->sync($validated['role_ids']);
                 }
 
-                // CORRECTION ICI : Ajout du 3ème argument ($user->email)
                 Mail::to($user->email)->send(new UserWelcomeEmail(
                     $user->name, 
                     $temporaryPassword, 
@@ -314,6 +368,11 @@ class EmployeeController extends Controller
     public function destroy(Employee $employee)
     {
         try {
+            // Supprimer la photo si elle existe
+            if ($employee->profile_photo) {
+                Storage::disk('public')->delete($employee->profile_photo);
+            }
+
             if ($employee->user) {
                 $employee->user()->delete(); 
             } else {
