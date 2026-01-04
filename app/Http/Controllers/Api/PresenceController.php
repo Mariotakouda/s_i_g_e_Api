@@ -6,7 +6,9 @@ use App\Models\Presence;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class PresenceController extends Controller
 {
@@ -37,31 +39,62 @@ class PresenceController extends Controller
         }
     }
 
+    public function myPresences()
+    {
+        try {
+            $user = Auth::user();
+            Log::info("🔍 myPresences - User:", ['id' => $user->id, 'email' => $user->email]);
+
+            $employee = $user->employee;
+
+            if (!$employee) {
+                Log::warning("⚠️ Aucun profil employé pour user " . $user->id);
+                return response()->json(["message" => "Profil employé introuvable."], 404);
+            }
+
+            Log::info("👤 Employee trouvé:", ['id' => $employee->id, 'name' => $employee->first_name]);
+
+            $presences = Presence::where('employee_id', $employee->id)
+                ->latest()
+                ->get();
+
+            Log::info("📋 Présences trouvées:", ['count' => $presences->count()]);
+
+            return response()->json($presences);
+        } catch (Throwable $e) {
+            Log::error("❌ Erreur dans myPresences(): " . $e->getMessage());
+            Log::error($e->getTraceAsString());
+            return response()->json(["message" => "Erreur interne", "error" => $e->getMessage()], 500);
+        }
+    }
+
+
     /**
      * Liste globale (Vue Admin)
      */
     public function index(Request $request): JsonResponse
-{
-    try {
-        $query = Presence::with('employee:id,first_name,last_name');
+    {
+        try {
+            // On charge la relation employee pour avoir les noms dans le dashboard
+            $query = Presence::with('employee:id,first_name,last_name');
 
-        // Filtrer par date spécifique (ex: 2025-12-25)
-        if ($request->has('date') && $request->date != '') {
-            $query->whereDate('date', $request->date);
+            // Filtre par date (important pour le dashboard admin)
+            if ($request->filled('date')) {
+                $query->whereDate('date', $request->date);
+            }
+
+            // Filtre par mois
+            if ($request->filled('month')) {
+                $query->whereMonth('date', $request->month);
+            }
+
+            $presences = $query->latest()->paginate(20);
+
+            return response()->json($presences);
+        } catch (\Throwable $th) {
+            return response()->json(['message' => 'Erreur lors de la récupération'], 500);
         }
-
-        // Filtrer par mois (ex: 12)
-        if ($request->has('month') && $request->month != '') {
-            $query->whereMonth('date', $request->month);
-        }
-
-        $presences = $query->latest('date')->paginate(20);
-
-        return response()->json($presences);
-    } catch (\Throwable $th) {
-        return response()->json(['message' => 'Erreur de filtrage'], 500);
     }
-}
 
     /**
      * Pointage d'arrivée (Check-in)
@@ -114,7 +147,7 @@ class PresenceController extends Controller
             $checkIn = \Carbon\Carbon::parse($presence->check_in);
             $checkOut = \Carbon\Carbon::parse($checkOutTime);
             $presence->total_hours = round($checkIn->diffInMinutes($checkOut) / 60, 2);
-            
+
             $presence->save();
 
             return response()->json($presence);

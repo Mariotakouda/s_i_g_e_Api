@@ -26,7 +26,7 @@ class UserWelcomeEmail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Bienvenue dans notre communauté S_i_g_e !',
+            subject: 'Bienvenue dans notre communauté HODO !',
         );
     }
 

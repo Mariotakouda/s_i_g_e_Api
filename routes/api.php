@@ -1,87 +1,102 @@
 <?php
 
-use App\Http\Controllers\Api\AdminLeaveRequestController;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\AuthController;
 use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\DepartmentController;
-use App\Http\Controllers\Api\RoleController;
-use App\Http\Controllers\Api\EmployeeRoleController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\PresenceController;
 use App\Http\Controllers\Api\LeaveRequestController;
 use App\Http\Controllers\Api\AnnouncementController;
-use App\Http\Controllers\Api\EmailController;
+use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\ManagerController;
-
-
-// Public Routes
-Route::post('/emails/send-welcome', [EmailController::class, 'sendWelcomeEmail']);
-Route::post('/register', [AuthController::class, 'register']);
-Route::post('/login', [AuthController::class, 'login']);
-
-
-// Authenticated Routes (Employees & Managers)
-
-Route::middleware('auth:sanctum')->group(function () {
-    Route::post('/logout', [AuthController::class, 'logout']);
-    Route::post('/update-password', [AuthController::class, 'updatePassword']);
-
-    // --- GESTION DES PRÉSENCES (Pointage Employé) ---
-    Route::post('/presences/check-in', [PresenceController::class, 'store']);
-    Route::put('/presences/{presence}/check-out', [PresenceController::class, 'update']);
-    Route::get('/presences/stats', [PresenceController::class, 'stats']);
-
-    // --- PROFIL "ME" ---
-    Route::prefix('me')->group(function () {
-        Route::get('/', [EmployeeController::class, 'me']);
-        Route::post('/photo', [EmployeeController::class, 'uploadPhoto']);
-        Route::delete('/photo', [EmployeeController::class, 'deletePhoto']);
-        Route::get('/tasks', [EmployeeController::class, 'myTasks']);
-        Route::get('/presences', [EmployeeController::class, 'myPresences']);
-        Route::get('/leave_requests', [EmployeeController::class, 'myLeaveRequests']);
-        Route::post('/leave_requests', [LeaveRequestController::class, 'store']);
-        Route::get('/announcements', [AnnouncementController::class, 'fetchMyAnnouncements']);
-        Route::get('/departments', [EmployeeController::class, 'myDepartments']);
-        Route::get('/roles', [EmployeeController::class, 'myRoles']);
-    });
-
-    // --- STATUT MANAGER & ANNONCES ---
-    Route::get('/check-manager-status', [AnnouncementController::class, 'checkManagerStatus']);
-    
-    Route::prefix('announcements')->group(function () {
-        Route::get('/', [AnnouncementController::class, 'index']);
-        Route::post('/', [AnnouncementController::class, 'store']);
-        Route::get('/{announcement}', [AnnouncementController::class, 'show']);
-        Route::put('/{announcement}', [AnnouncementController::class, 'update']);
-        Route::delete('/{announcement}', [AnnouncementController::class, 'destroy']);
-    });
-});
+use App\Http\Controllers\AuthController;
 
 /*
 |--------------------------------------------------------------------------
-| Admin Routes
+| API Routes
 |--------------------------------------------------------------------------
 */
-Route::middleware(['auth:sanctum', 'admin'])->group(function () {
-    Route::apiResource('departments', DepartmentController::class);
-    Route::apiResource('employees', EmployeeController::class);
-    Route::apiResource('roles', RoleController::class);
-    Route::apiResource('employee_roles', EmployeeRoleController::class);
-    Route::apiResource('tasks', TaskController::class);
-    Route::apiResource('managers', ManagerController::class);
-    
-    Route::apiResource('presences', PresenceController::class)->except(['store', 'update']);
 
-    // Leave Requests (Admin)
-    Route::get('leave-requests/statistics', [LeaveRequestController::class, 'statistics'])
-        ->name('admin.leave_requests.statistics');
-    Route::get('leave-requests', [AdminLeaveRequestController::class, 'index'])
-        ->name('admin.leave_requests.index');
-    Route::put('leave-requests/{leaveRequest}/approve', [AdminLeaveRequestController::class, 'approve'])
-        ->name('admin.leave_requests.approve');
-    Route::put('leave-requests/{leaveRequest}/reject', [AdminLeaveRequestController::class, 'reject'])
-        ->name('admin.leave_requests.reject');
-    Route::delete('leave-requests/{leaveRequest}', [AdminLeaveRequestController::class, 'destroy'])
-        ->name('admin.leave_requests.delete');
+// 1. ROUTES PUBLIQUES
+Route::post('/login', [AuthController::class, 'login']);
+
+// 2. ROUTES PROTÉGÉES (Nécessitent d'être connecté)
+Route::middleware('auth:sanctum')->group(function () {
+        Route::get('employees', [EmployeeController::class, 'index']);
+
+    // --- AUTHENTIFICATION & PROFIL ---
+    Route::post('/logout', [AuthController::class, 'logout']);
+    Route::get('/user', [AuthController::class, 'user']);
+    Route::get('/me', [EmployeeController::class, 'me']);
+    Route::get('/check-manager-status', [EmployeeController::class, 'checkManagerStatus']);
+    Route::post('/change-password', [AuthController::class, 'updatePassword']);
+
+    // --- PHOTO DE PROFIL ---
+    Route::post('/me/profile-photo', [EmployeeController::class, 'uploadPhoto']);
+    Route::delete('/me/profile-photo', [EmployeeController::class, 'deletePhoto']);
+
+    // --- ESPACE PERSONNEL (Tout employé) ---
+    Route::get('/me/tasks', [TaskController::class, 'myTasks']);
+    Route::get('/me/presences', [PresenceController::class, 'myPresences']);
+    Route::get('/me/leave-requests', [LeaveRequestController::class, 'myLeaveRequests']);
+    Route::get('/me/announcements', [AnnouncementController::class, 'myAnnouncements']);
+
+    Route::get('/announcements', [AnnouncementController::class, 'index']);
+    Route::get('/announcements/{announcement}', [AnnouncementController::class, 'show']);
+
+    Route::post('/presences/check-in', [PresenceController::class, 'store']);
+    Route::put('/presences/{presence}/check-out', [PresenceController::class, 'update']);
+    Route::post('/leave-requests', [LeaveRequestController::class, 'store']);
+
+    // --- CONSULTATION TÂCHES (Détails & Rapports) ---
+    Route::get('/tasks/{task}', [TaskController::class, 'show']);
+    Route::post('/tasks/{task}/submit-report', [TaskController::class, 'submitReport']);
+    Route::post('/tasks/{task}/mark-completed', [TaskController::class, 'markAsCompleted']);
+    Route::get('/tasks/{task}/download-file', [TaskController::class, 'downloadTaskFile']);
+    Route::get('/tasks/{task}/download-report', [TaskController::class, 'downloadReportFile']);
+
+    // ============================================================
+    // 3. ROUTES MANAGER & ADMIN (Gestion d'équipe)
+    // ============================================================
+    Route::middleware('is_manager')->group(function () {
+
+        // --- GESTION DES EMPLOYÉS (Lecture seule pour Manager) ---
+        Route::get('employees/{employee}', [EmployeeController::class, 'show']);
+
+        // --- GESTION DES TÂCHES (Création/Assignation) ---
+        Route::get('/tasks', [TaskController::class, 'index']);
+        Route::post('/tasks', [TaskController::class, 'store']);
+        Route::put('/tasks/{task}', [TaskController::class, 'update']);
+        Route::get('/manager/team-tasks', [TaskController::class, 'managerTeamTasks']);
+
+        // --- GESTION DES ANNONCES ---
+        Route::post('/announcements', [AnnouncementController::class, 'store']);
+        Route::put('/announcements/{announcement}', [AnnouncementController::class, 'update']);
+
+        // --- GESTION DES PRÉSENCES & CONGÉS ---
+        Route::get('/presences', [PresenceController::class, 'index']);
+        Route::get('/leave-requests', [LeaveRequestController::class, 'indexAdmin']);
+        Route::put('/leave-requests/{leaveRequest}/approve', [LeaveRequestController::class, 'approve']);
+        Route::put('/leave-requests/{leaveRequest}/reject', [LeaveRequestController::class, 'reject']);
+    });
+
+    // ============================================================
+    // 4. ROUTES ADMIN UNIQUEMENT (Configuration Système)
+    // ============================================================
+    Route::middleware('admin')->group(function () {
+
+        // --- GESTION COMPLÈTE (CRUD) ---
+        Route::apiResource('employees', EmployeeController::class);
+        Route::apiResource('departments', DepartmentController::class);
+        Route::apiResource('roles', RoleController::class);
+        Route::apiResource('managers', ManagerController::class);
+
+        // Suppression des annonces
+        Route::delete('/announcements/{announcement}', [AnnouncementController::class, 'destroy']);
+
+        // --- SUPPRESSIONS DÉFINITIVES ---
+        Route::delete('/tasks/{task}', [TaskController::class, 'destroy']);
+        Route::delete('/leave-requests/{id}', [LeaveRequestController::class, 'destroy']);
+        Route::delete('/presences/{id}', [PresenceController::class, 'destroy']);
+    });
 });

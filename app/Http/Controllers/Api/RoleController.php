@@ -6,10 +6,26 @@ use App\Models\Role;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class RoleController extends Controller
 {
+
+    public function myRoles()
+    {
+        try {
+            $employee = Auth::user()->employee;
+            if (!$employee) return response()->json(["message" => "Profil employé introuvable."], 404);
+            return response()->json($employee->roles);
+        } catch (Throwable $e) {
+            Log::error("Erreur dans myRoles(): ".$e->getMessage());
+            return response()->json(["message" => "Erreur interne"], 500);
+        }
+    }
+
     /**
      * Liste des rôles avec pagination et recherche.
      */

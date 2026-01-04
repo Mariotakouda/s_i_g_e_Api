@@ -25,7 +25,7 @@
         <p style="margin-top:30px; text-align:center;">
             <a href="{{ url('/login') }}" 
                style="display:inline-block; padding:12px 24px; background-color:#007bff; color:#ffffff; text-decoration:none; border-radius:5px; font-weight:bold;">
-                Se connecter au tableau de bord
+                Se connecter au tableau de bord employé
             </a>
         </p>
         

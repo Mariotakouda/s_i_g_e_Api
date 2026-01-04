@@ -12,53 +12,121 @@ use Throwable;
 
 class LeaveRequestController extends Controller
 {
+
+    public function myLeaveRequests()
+    {
+        try {
+            $employee = Auth::user()->employee;
+            if (!$employee) return response()->json(["message" => "Profil employé introuvable."], 404);
+            return response()->json($employee->leaveRequests);
+        } catch (Throwable $e) {
+            Log::error("Erreur dans myLeaveRequests(): " . $e->getMessage());
+            return response()->json(["message" => "Erreur interne"], 500);
+        }
+    }
     /**
      * Affiche toutes les demandes de congé de l'employé connecté.
      */
     public function index(): JsonResponse
     {
+        return response()->json(LeaveRequest::with('employee')->latest()->paginate(15));
         try {
             $employee = Auth::user()->employee;
             if (!$employee) {
                 return response()->json(["message" => "Profil employé non trouvé."], 404);
             }
-            
+
             // Récupère uniquement les demandes associées à l'employé
-            $leaves = $employee->leaveRequests()->latest()->get(); 
+            $leaves = $employee->leaveRequests()->latest()->get();
 
             return response()->json($leaves);
-            
         } catch (Throwable $e) {
             Log::error("Erreur dans LeaveRequestController@index: " . $e->getMessage());
             return response()->json(["message" => "Erreur interne"], 500);
         }
     }
 
-    // ----------------------------------------------------
-    // 🎯 NOUVEAU : Index pour le tableau de bord Admin
-    // ----------------------------------------------------
-    /**
-     * Affiche TOUTES les demandes de congé (méthode Admin).
-     * Inclut l'Eager Loading pour la relation 'employee'.
-     */
-    public function indexAdmin(): JsonResponse
+    public function myLeaves()
     {
         try {
-            // Vérification de l'autorisation ici (par exemple, Auth::user()->can('manage_leaves'))
-            // Je suppose qu'un middleware gère déjà la permission 'admin'
-            
-            // 🚀 Chargement de TOUTES les demandes avec les relations (employee)
-            $leaves = LeaveRequest::with('employee')
+            $employee = Auth::user()->employee;
+            if (!$employee) {
+                return response()->json(["message" => "Profil employé introuvable."], 404);
+            }
+
+            $leaves = LeaveRequest::where('employee_id', $employee->id)
                 ->latest()
-                ->get(); 
-            
+                ->get();
+
             return response()->json($leaves);
-            
         } catch (Throwable $e) {
-            Log::error("Erreur dans LeaveRequestController@indexAdmin: " . $e->getMessage());
-            // Il est préférable de retourner une erreur 500 générique en cas de plantage BDD/Serveur
-            return response()->json(["message" => "Erreur lors du chargement des demandes d'administration."], 500);
+            Log::error("Erreur dans myLeaves(): " . $e->getMessage());
+            return response()->json(["message" => "Erreur interne"], 500);
         }
+    }
+
+    /**
+     * Liste pour l'Admin et le Manager (Toutes les demandes du département ou globales)
+     */
+   public function indexAdmin(): JsonResponse
+{
+    try {
+        // 1. Définir l'utilisateur connecté d'abord
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+
+        if (!$user) {
+            return response()->json(["message" => "Non authentifié"], 401);
+        }
+
+        // 2. Initialiser la requête avec la relation employé et son département
+        $query = LeaveRequest::with(['employee.department'])->latest();
+
+        // 3. Appliquer le filtre si l'utilisateur n'est PAS un admin (donc c'est un manager)
+        if ($user->role !== 'admin') {
+            // On récupère l'ID du département du manager via son profil employé
+            $deptId = $user->employee ? $user->employee->department_id : null;
+
+            if (!$deptId) {
+                return response()->json(["message" => "Département manager introuvable"], 403);
+            }
+
+            // Filtrer les demandes : l'employé doit appartenir au même département
+            $query->whereHas('employee', function($q) use ($deptId) {
+                $q->where('department_id', $deptId);
+            });
+        }
+
+        // 4. Exécuter la requête
+        $leaves = $query->get();
+
+        return response()->json($leaves);
+
+    } catch (\Throwable $e) {
+        \Log::error("Erreur indexAdmin: " . $e->getMessage());
+        return response()->json([
+            "message" => "Erreur lors du chargement des demandes.",
+            "error" => $e->getMessage()
+        ], 500);
+    }
+}
+
+    public function approve(Request $request, LeaveRequest $leaveRequest): JsonResponse
+    {
+        $leaveRequest->update([
+            'status' => 'approved',
+            'admin_comment' => $request->input('admin_comment')
+        ]);
+        return response()->json(['message' => 'Approuvée', 'request' => $leaveRequest]);
+    }
+
+    public function reject(Request $request, LeaveRequest $leaveRequest): JsonResponse
+    {
+        $leaveRequest->update([
+            'status' => 'rejected',
+            'admin_comment' => $request->input('admin_comment')
+        ]);
+        return response()->json(['message' => 'Rejetée', 'request' => $leaveRequest]);
     }
 
     /**
@@ -72,7 +140,7 @@ class LeaveRequestController extends Controller
             if (!$employee) {
                 return response()->json(["message" => "Profil employé non trouvé."], 404);
             }
-            
+
             // Validation basée sur le modèle et la migration fournis (champ 'message')
             $validated = $request->validate([
                 'type' => 'required|string', // Vous pouvez ajouter in:annuel,maladie,etc. si vous utilisez un enum
@@ -91,49 +159,10 @@ class LeaveRequestController extends Controller
                 'message' => 'Demande de congé soumise avec succès et en attente d\'approbation.',
                 'request' => $leaveRequest
             ], 201);
-
         } catch (Throwable $e) {
             Log::error("Erreur dans LeaveRequestController@store: " . $e->getMessage());
             // Retourne les erreurs de validation si elles existent
             return response()->json(["message" => "Erreur lors de la soumission de la demande.", "error" => $e->getMessage()], 500);
         }
     }
-
-    // ----------------------------------------------------
-    // 🎯 NOUVEAU : Méthodes d'action Approve/Reject pour l'Admin
-    // ----------------------------------------------------
-    
-    public function approve(Request $request, LeaveRequest $leaveRequest): JsonResponse
-{
-    try {
-        $leaveRequest->update([
-            'status' => 'approved',
-            'admin_comment' => $request->input('admin_comment') // Récupère le commentaire
-        ]);
-
-        return response()->json([
-            'message' => 'Demande approuvée.',
-            'request' => $leaveRequest->load('employee')
-        ]);
-    } catch (Throwable $e) {
-        return response()->json(["message" => "Erreur interne"], 500);
-    }
-}
-
-public function reject(Request $request, LeaveRequest $leaveRequest): JsonResponse
-{
-    try {
-        $leaveRequest->update([
-            'status' => 'rejected',
-            'admin_comment' => $request->input('admin_comment') // Récupère le commentaire
-        ]);
-
-        return response()->json([
-            'message' => 'Demande rejetée.',
-            'request' => $leaveRequest->load('employee')
-        ]);
-    } catch (Throwable $e) {
-        return response()->json(["message" => "Erreur interne"], 500);
-    }
-}
 }

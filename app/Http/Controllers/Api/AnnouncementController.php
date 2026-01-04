@@ -2,371 +2,268 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Controller;
 use App\Models\Announcement;
 use Illuminate\Http\Request;
-use App\Http\Controllers\Controller;
-use App\Models\Employee;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class AnnouncementController extends Controller
 {
-    public function index(): JsonResponse
+    /**
+     * ✅ Liste des annonces (filtrées selon le rôle)
+     */
+    public function index(Request $request)
     {
         try {
             $user = Auth::user();
-            
-            // ADMIN : Voir toutes les annonces
-            if ($user->role === 'admin') {
-                $announcements = Announcement::with(['employee:id,first_name,last_name', 'department:id,name', 'creator:id,name'])
-                    ->orderBy('created_at', 'desc')
-                    ->paginate(10);
-                return response()->json($announcements);
+            $search = $request->query('search', '');
+
+            $query = Announcement::with(['creator', 'department'])
+                ->orderBy('created_at', 'desc');
+
+            // ✅ Filtrage intelligent selon le rôle
+            if ($user->role !== 'admin') {
+                $deptId = $user->employee->department_id ?? null;
+
+                $query->where(function ($q) use ($deptId) {
+                    // Tout le monde voit les annonces générales
+                    $q->where('is_general', true);
+
+                    // On voit aussi les annonces de son propre département (si on en a un)
+                    if ($deptId) {
+                        $q->orWhere('department_id', $deptId);
+                    }
+                });
             }
-            
-            // MANAGER : Voir annonces générales + son département + celles qu'il a créées
-            if ($user->role === 'employee') {
-                $manager = $this->isManager($user);
-                
-                if ($manager) {
-                    $announcements = Announcement::with(['employee:id,first_name,last_name', 'department:id,name', 'creator:id,name'])
-                        ->where(function($query) use ($manager, $user) {
-                            $query->where('is_general', true)
-                                  ->orWhere('department_id', $manager->department_id)
-                                  ->orWhere('user_id', $user->id);
-                        })
-                        ->orderBy('created_at', 'desc')
-                        ->paginate(10);
-                    
-                    return response()->json($announcements);
-                }
-                
-                // EMPLOYÉ : Voir annonces générales + son département + lui personnellement
-                $employee = $user->employee;
-                $query = Announcement::where('is_general', true);
-                
-                if ($employee) {
-                    $query->orWhere('employee_id', $employee->id);
-                    if ($employee->department_id) {
-                        $query->orWhere('department_id', $employee->department_id);
+            // Si c'est un Admin, il ne rentre pas dans le 'if', donc il voit TOUT.
+
+            // ✅ Gestion de la recherche
+            if ($search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('title', 'like', "%{$search}%")
+                        ->orWhere('message', 'like', "%{$search}%");
+                });
+            }
+
+            $announcements = $query->paginate(15);
+            return response()->json($announcements, 200);
+        } catch (Throwable $e) {
+            Log::error("Erreur index announcements: " . $e->getMessage());
+            return response()->json(["message" => "Erreur interne"], 500);
+        }
+    }
+
+    /**
+     * ✅ NOUVELLE MÉTHODE : Annonces pour l'employé connecté (sans pagination)
+     */
+    public function myAnnouncements()
+    {
+        try {
+            $user = Auth::user();
+
+            // On récupère l'ID du département de l'employé
+            $deptId = $user->employee->department_id ?? null;
+
+            $announcements = Announcement::with(['creator', 'department'])
+                ->where(function ($q) use ($deptId) {
+                    // 1. Toujours inclure les annonces générales
+                    $q->where('is_general', true);
+
+                    // 2. Inclure les annonces du département si l'employé en a un
+                    if ($deptId) {
+                        $q->orWhere('department_id', $deptId);
+                    }
+                })
+                ->orderBy('created_at', 'desc')
+                ->limit(5) // On limite pour le Dashboard
+                ->get();
+
+            // On retourne la structure attendue par le Dashboard
+            return response()->json([
+                'status' => 'success',
+                'data' => $announcements
+            ], 200);
+        } catch (\Throwable $e) {
+            \Log::error("Erreur Dashboard Annonces: " . $e->getMessage());
+            return response()->json(["message" => "Erreur de chargement"], 500);
+        }
+    }
+
+    /**
+     * ✅ Créer une annonce
+     */
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'title' => 'required|string|max:255',
+            'message' => 'required|string',
+            'department_id' => 'nullable|exists:departments,id',
+            'is_general' => 'boolean'
+        ]);
+
+        try {
+            $user = Auth::user();
+
+            // Vérifier les permissions pour les managers
+            if ($user->role === 'manager' || $this->isEmployeeManager($user)) {
+                $managerDeptId = $user->employee->department_id ?? null;
+
+                // Si c'est une annonce de département, vérifier que c'est le sien
+                if (isset($validated['department_id']) && $validated['department_id'] !== null) {
+                    if ($validated['department_id'] !== $managerDeptId) {
+                        return response()->json([
+                            "message" => "Vous ne pouvez créer des annonces que pour votre département."
+                        ], 403);
                     }
                 }
-                
-                $announcements = $query
-                    ->with(['employee:id,first_name,last_name', 'department:id,name', 'creator:id,name'])
-                    ->orderBy('created_at', 'desc')
-                    ->paginate(10);
-                    
-                return response()->json($announcements);
             }
-            
-            return response()->json(['message' => 'Accès refusé'], 403);
-            
-        } catch (Throwable $th) {
-            Log::error("Erreur dans AnnouncementController@index", ['details' => $th->getMessage()]);
+
+            // Si department_id est null, forcer is_general à true
+            if (!isset($validated['department_id']) || $validated['department_id'] === null) {
+                $validated['is_general'] = true;
+            } else {
+                $validated['is_general'] = false;
+            }
+
+            $announcement = Announcement::create([
+                'title' => $validated['title'],
+                'message' => $validated['message'],
+                'department_id' => $validated['department_id'] ?? null,
+                'is_general' => $validated['is_general'],
+                'creator_id' => $user->id,
+            ]);
+
             return response()->json([
-                'error' => 'Failed to fetch announcements.',
-                'details' => $th->getMessage(),
+                'message' => 'Annonce créée avec succès',
+                'data' => $announcement->load(['creator', 'department'])
+            ], 201);
+        } catch (Throwable $e) {
+            Log::error("Erreur création annonce: " . $e->getMessage());
+            return response()->json([
+                "message" => "Erreur lors de la création",
+                "error" => $e->getMessage()
             ], 500);
         }
     }
 
-    private function isManager($user): ?\App\Models\Manager
-    {
-        if (!$user || $user->role !== 'employee') {
-            return null;
-        }
-
-        $employee = $user->employee;
-        if (!$employee) {
-            return null;
-        }
-
-        return \App\Models\Manager::where('employee_id', $employee->id)->first();
-    }
-
-    public function store(Request $request): JsonResponse
+    /**
+     * ✅ Afficher une annonce
+     */
+    public function show(Announcement $announcement)
     {
         try {
             $user = Auth::user();
-            
-            $validated = $request->validate([
-                'title' => 'required|string|max:255',
-                'message' => 'required|string',
-                'employee_id' => 'nullable|exists:employees,id',
-                'department_id' => 'nullable|exists:departments,id',
-                'is_general' => 'boolean',
-            ]);
 
-            $validated['user_id'] = $user->id;
+            // Vérifier l'accès selon le rôle
+            if ($user->role === 'employee' || $user->role === 'manager') {
+                $deptId = $user->employee->department_id ?? null;
 
-            // ADMIN : Peut tout faire
-            if ($user->role === 'admin') {
-                // Vérifier la cohérence
-                if (isset($validated['is_general']) && $validated['is_general']) {
-                    $validated['employee_id'] = null;
-                    $validated['department_id'] = null;
-                } elseif (isset($validated['employee_id']) && $validated['employee_id']) {
-                    $validated['is_general'] = false;
-                    $validated['department_id'] = null;
-                } elseif (isset($validated['department_id']) && $validated['department_id']) {
-                    $validated['is_general'] = false;
-                    $validated['employee_id'] = null;
+                // Peut voir si c'est général OU si c'est son département
+                $canView = $announcement->is_general ||
+                    $announcement->department_id === $deptId;
+
+                if (!$canView) {
+                    return response()->json([
+                        "message" => "Accès refusé à cette annonce."
+                    ], 403);
                 }
             }
-            // MANAGER : Seulement son département ou un employé de son département
-            elseif ($user->role === 'employee') {
-                $manager = $this->isManager($user);
 
-                if (!$manager) {
+            $announcement->load(['creator', 'department']);
+            return response()->json(['data' => $announcement], 200);
+        } catch (Throwable $e) {
+            Log::error("Erreur show announcement: " . $e->getMessage());
+            return response()->json(["message" => "Erreur interne"], 500);
+        }
+    }
+
+    /**
+     * ✅ Modifier une annonce
+     */
+    public function update(Request $request, Announcement $announcement)
+    {
+        $validated = $request->validate([
+            'title' => 'sometimes|string|max:255',
+            'message' => 'sometimes|string',
+            'department_id' => 'nullable|exists:departments,id',
+            'is_general' => 'boolean'
+        ]);
+
+        try {
+            $user = Auth::user();
+
+            // Vérifier que l'utilisateur peut modifier cette annonce
+            if ($user->role !== 'admin') {
+                // Seul le créateur ou un admin peut modifier
+                if ($announcement->creator_id !== $user->id) {
                     return response()->json([
-                        'message' => 'Accès refusé. Seuls les managers et administrateurs peuvent créer des annonces.'
+                        "message" => "Vous ne pouvez modifier que vos propres annonces."
                     ], 403);
                 }
 
-                // Le manager peut publier pour tout son département
-                if (isset($validated['department_id']) && $validated['department_id']) {
-                    if ($validated['department_id'] != $manager->department_id) {
+                // Manager : vérifier le département
+                if ($user->role === 'manager' || $this->isEmployeeManager($user)) {
+                    $managerDeptId = $user->employee->department_id ?? null;
+
+                    if (
+                        isset($validated['department_id']) &&
+                        $validated['department_id'] !== null &&
+                        $validated['department_id'] !== $managerDeptId
+                    ) {
                         return response()->json([
-                            'message' => 'Vous ne pouvez publier que dans votre département.'
+                            "message" => "Vous ne pouvez créer des annonces que pour votre département."
                         ], 403);
                     }
-                    $validated['is_general'] = false;
-                    $validated['employee_id'] = null;
-                }
-                // Ou pour un employé spécifique de son département
-                elseif (isset($validated['employee_id']) && $validated['employee_id']) {
-                    $employee = Employee::find($validated['employee_id']);
-                    if (!$employee || $employee->department_id != $manager->department_id) {
-                        return response()->json([
-                            'message' => 'Vous ne pouvez cibler que des employés de votre département.'
-                        ], 403);
-                    }
-                    $validated['is_general'] = false;
-                    $validated['department_id'] = null;
-                }
-                // Par défaut : tout le département du manager
-                else {
-                    $validated['is_general'] = false;
-                    $validated['employee_id'] = null;
-                    $validated['department_id'] = $manager->department_id;
-                }
-            } else {
-                return response()->json(['message' => 'Accès refusé'], 403);
-            }
-
-            $announcement = Announcement::create($validated);
-            $announcement->load(['employee', 'department', 'creator']);
-            
-            return response()->json($announcement, 201);
-            
-        } catch (Throwable $th) {
-            Log::error("Erreur création annonce: " . $th->getMessage());
-            return response()->json([
-                'error' => 'Échec de la création', 
-                'details' => $th->getMessage()
-            ], 500);
-        }
-    }
-
-    public function show(Announcement $announcement): JsonResponse
-    {
-        try {
-            $user = Auth::user();
-            
-            // Admin peut tout voir
-            if ($user->role === 'admin') {
-                $announcement->load(['employee', 'department', 'creator']);
-                return response()->json($announcement);
-            }
-            
-            // Manager peut voir ses annonces + celles de son département
-            if ($user->role === 'employee') {
-                $manager = $this->isManager($user);
-                
-                if ($manager) {
-                    if ($announcement->user_id !== $user->id && 
-                        $announcement->department_id !== $manager->department_id && 
-                        !$announcement->is_general) {
-                        return response()->json(['message' => 'Accès refusé'], 403);
-                    }
-                } else {
-                    // Employé simple : seulement s'il est concerné
-                    $employee = $user->employee;
-                    if (!$announcement->is_general && 
-                        $announcement->employee_id !== $employee->id &&
-                        $announcement->department_id !== $employee->department_id) {
-                        return response()->json(['message' => 'Accès refusé'], 403);
-                    }
-                }
-            }
-            
-            $announcement->load(['employee', 'department', 'creator']);
-            return response()->json($announcement);
-        } catch (\Throwable $th) {
-            return response()->json([
-                'error' => 'Failed to retrieve announcement.',
-                'details' => $th->getMessage(),
-            ], 500);
-        }
-    }
-
-    public function fetchMyAnnouncements(): JsonResponse
-    {
-        try {
-            $user = Auth::user();
-            $employee = Employee::where('user_id', $user->id)->first(); 
-
-            if (!$employee) {
-                $employeeId = null;
-                $departmentId = null;
-            } else {
-                $employeeId = $employee->id;
-                $departmentId = $employee->department_id;
-            }
-
-            $query = Announcement::where('is_general', true);
-
-            if ($employeeId) {
-                $query->orWhere('employee_id', $employeeId);
-            }
-            
-            if ($departmentId) {
-                $query->orWhere('department_id', $departmentId);
-            }
-
-            $announcements = $query
-                ->with('employee:id,first_name,last_name', 'department:id,name', 'creator:id,name')
-                ->orderBy('created_at', 'desc')
-                ->get();
-
-            return response()->json($announcements);
-            
-        } catch (Throwable $th) {
-            Log::error("Erreur dans AnnouncementController@fetchMyAnnouncements", ['details' => $th->getMessage()]);
-            return response()->json([
-                'error' => 'Failed to fetch employee announcements.',
-                'details' => $th->getMessage(),
-            ], 500);
-        }
-    }
-
-    public function update(Request $request, Announcement $announcement): JsonResponse
-    {
-        try {
-            $user = Auth::user();
-            
-            // Seul le créateur ou un admin peut modifier
-            if ($user->role !== 'admin' && $announcement->user_id !== $user->id) {
-                return response()->json(['message' => 'Accès refusé. Vous ne pouvez modifier que vos propres annonces.'], 403);
-            }
-            
-            $validated = $request->validate([
-                'title' => 'sometimes|required|string|max:255',
-                'message' => 'sometimes|required|string',
-                'employee_id' => 'nullable|exists:employees,id',
-                'department_id' => 'nullable|exists:departments,id',
-                'is_general' => 'boolean',
-            ]);
-
-            // Si c'est un manager (pas admin), vérifier les contraintes
-            if ($user->role === 'employee') {
-                $manager = $this->isManager($user);
-                if (!$manager) {
-                    return response()->json(['message' => 'Accès refusé'], 403);
-                }
-
-                // Appliquer les mêmes règles que pour la création
-                if (isset($validated['department_id']) && $validated['department_id']) {
-                    if ($validated['department_id'] != $manager->department_id) {
-                        return response()->json(['message' => 'Vous ne pouvez cibler que votre département.'], 403);
-                    }
-                    $validated['is_general'] = false;
-                    $validated['employee_id'] = null;
-                } elseif (isset($validated['employee_id']) && $validated['employee_id']) {
-                    $employee = Employee::find($validated['employee_id']);
-                    if (!$employee || $employee->department_id != $manager->department_id) {
-                        return response()->json(['message' => 'Vous ne pouvez cibler que des employés de votre département.'], 403);
-                    }
-                    $validated['is_general'] = false;
-                    $validated['department_id'] = null;
                 }
             }
 
             $announcement->update($validated);
-            $announcement->load(['employee', 'department', 'creator']);
 
-            return response()->json($announcement);
-        } catch (\Throwable $th) {
             return response()->json([
-                'error' => 'Failed to update announcement.',
-                'details' => $th->getMessage(),
-            ], 500);
+                'message' => 'Annonce mise à jour',
+                'data' => $announcement->load(['creator', 'department'])
+            ], 200);
+        } catch (Throwable $e) {
+            Log::error("Erreur update announcement: " . $e->getMessage());
+            return response()->json(["message" => "Erreur interne"], 500);
         }
     }
 
-    public function destroy(Announcement $announcement): JsonResponse
+    /**
+     * ✅ Supprimer une annonce
+     */
+    public function destroy(Announcement $announcement)
     {
         try {
             $user = Auth::user();
-            
-            // Seul le créateur ou un admin peut supprimer
-            if ($user->role !== 'admin' && $announcement->user_id !== $user->id) {
-                return response()->json(['message' => 'Accès refusé. Vous ne pouvez supprimer que vos propres annonces.'], 403);
-            }
-            
-            $announcement->delete();
-            return response()->json(null, 204);
-        } catch (\Throwable $th) {
-            return response()->json([
-                'error' => 'Failed to delete announcement.',
-                'details' => $th->getMessage(),
-            ], 500);
-        }
-    }
-    
-    public function checkManagerStatus(): JsonResponse
-    {
-        try {
-            $user = Auth::user();
-            
-            if ($user->role === 'admin') {
+
+            // Seul l'admin ou le créateur peut supprimer
+            if ($user->role !== 'admin' && $announcement->creator_id !== $user->id) {
                 return response()->json([
-                    'is_manager' => true,
-                    'is_admin' => true,
-                    'department_id' => null,
-                    'department_name' => null
-                ]);
+                    "message" => "Vous ne pouvez supprimer que vos propres annonces."
+                ], 403);
             }
-            
-            if ($user->role === 'employee') {
-                $manager = $this->isManager($user);
-                
-                if ($manager) {
-                    return response()->json([
-                        'is_manager' => true,
-                        'is_admin' => false,
-                        'department_id' => $manager->department_id,
-                        'department_name' => $manager->department->name ?? null
-                    ]);
-                }
-            }
-            
-            return response()->json([
-                'is_manager' => false,
-                'is_admin' => false,
-                'department_id' => null,
-                'department_name' => null
-            ]);
-            
-        } catch (Throwable $th) {
-            Log::error("Erreur checkManagerStatus: " . $th->getMessage());
-            return response()->json([
-                'error' => 'Failed to check manager status.',
-                'details' => $th->getMessage(),
-            ], 500);
+
+            $announcement->delete();
+
+            return response()->json(["message" => "Annonce supprimée"], 204);
+        } catch (Throwable $e) {
+            Log::error("Erreur suppression announcement: " . $e->getMessage());
+            return response()->json(["message" => "Erreur suppression"], 500);
         }
+    }
+
+    /**
+     * ✅ Vérifie si un employé a le rôle de manager
+     */
+    private function isEmployeeManager($user): bool
+    {
+        if (!$user->employee) return false;
+
+        return $user->role === 'manager' ||
+            $user->employee->roles()->where('name', 'manager')->exists() ||
+            \App\Models\Manager::where('employee_id', $user->employee->id)->exists();
     }
 }

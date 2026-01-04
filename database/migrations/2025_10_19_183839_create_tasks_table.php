@@ -14,10 +14,13 @@ return new class extends Migration
         Schema::create('tasks', function (Blueprint $table) {
             $table->id();
             $table->foreignId('employee_id')->constrained('employees')->onDelete('cascade');
+            $table->foreignId('creator_id')->constrained('users')->onDelete('cascade'); // L'ADMIN/MANAGER
             $table->string('title');
             $table->text('description')->nullable();
             $table->string('status')->default('pending');
             $table->date('due_date')->nullable();
+            $table->string('task_file')->nullable();    // PDF de l'Admin/Manager
+            $table->string('report_file')->nullable();  // PDF de l'Employé
             $table->timestamps();
         });
     }

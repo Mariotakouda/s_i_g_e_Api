@@ -6,6 +6,9 @@ use App\Models\Department;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class DepartmentController extends Controller
 {
@@ -26,6 +29,18 @@ class DepartmentController extends Controller
                 'message' => 'Erreur lors de la récupération de la liste des départements.',
                 'error'   => $th->getMessage()
             ], 500);
+        }
+    }
+
+    public function myDepartments()
+    {
+        try {
+            $employee = Auth::user()->employee;
+            if (!$employee) return response()->json(["message" => "Profil employé introuvable."], 404);
+            return response()->json($employee->department);
+        } catch (Throwable $e) {
+            Log::error("Erreur dans myDepartments(): ".$e->getMessage());
+            return response()->json(["message" => "Erreur interne"], 500);
         }
     }
 

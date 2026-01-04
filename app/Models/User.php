@@ -39,10 +39,39 @@ class User extends Authenticatable
     }
 
     /**
-     * Vérifie si l'utilisateur est admin
+     * Vérifie si l'utilisateur est admin (insensible à la casse)
      */
     public function isAdmin(): bool
     {
-        return $this->role === 'admin';
+        return strtolower($this->role) === 'admin';
+    }
+
+    /**
+     * Vérifie si l'utilisateur est manager (plusieurs sources possibles)
+     */
+    public function isManager(): bool
+    {
+        // 1. Vérification du rôle direct (insensible à la casse)
+        if (in_array(strtolower($this->role), ['admin', 'manager'])) {
+            return true;
+        }
+
+        // 2. Vérification via la table pivot roles
+        if ($this->employee) {
+            $hasManagerRole = $this->employee->roles()
+                ->whereRaw('LOWER(name) = ?', ['manager'])
+                ->exists();
+
+            if ($hasManagerRole) {
+                return true;
+            }
+
+            // 3. Vérification dans la table managers
+            $existsInManagersTable = \App\Models\Manager::where('employee_id', $this->employee->id)->exists();
+            
+            return $existsInManagersTable;
+        }
+
+        return false;
     }
 }
