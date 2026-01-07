@@ -13,7 +13,7 @@ use Throwable;
 class DepartmentController extends Controller
 {
     /**
-     * Récupère une liste simple de tous les départements (ID et Nom)
+     * Récupère une liste simple de tous les départements
      * pour les listes déroulantes des formulaires.
      */
     public function list(): JsonResponse

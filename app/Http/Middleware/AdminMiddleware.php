@@ -56,8 +56,8 @@ class AdminMiddleware
             }
         }
 
-        // ❌ Accès refusé
-        Log::warning('❌ Accès refusé', [
+        // Accès refusé
+        Log::warning('Accès refusé', [
             'user_id'  => $user->id,
             'role'     => $user->role,
             'endpoint' => $request->path(),

@@ -162,4 +162,59 @@ class PresenceController extends Controller
         $presence->delete();
         return response()->json(null, 204);
     }
+
+    public function export()
+{
+    try {
+        // 1. Récupération des données avec la relation employee
+        $presences = Presence::with('employee:id,first_name,last_name')
+            ->latest()
+            ->get();
+
+        if ($presences->isEmpty()) {
+            return response()->json(['message' => 'Aucune donnée à exporter'], 404);
+        }
+
+        $filename = "export_presences_" . date('d-m-Y') . ".csv";
+
+        // 2. Préparation du flux de sortie
+        $callback = function() use($presences) {
+            $file = fopen('php://output', 'w');
+            
+            // Étape capitale : Le BOM UTF-8 (permet à WPS de lire les accents et de voir le fichier)
+            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
+            
+            // 3. Entêtes du tableau (Utilisation du point-virgule pour WPS)
+            fputcsv($file, ['ID', 'Employé', 'Date', 'Arrivée', 'Sortie', 'Heures Totales'], ';');
+
+            // 4. Remplissage des lignes
+            foreach ($presences as $presence) {
+                fputcsv($file, [
+                    $presence->id,
+                    ($presence->employee->first_name ?? '') . ' ' . ($presence->employee->last_name ?? ''),
+                    $presence->date,
+                    // Format court HH:mm pour éviter les colonnes trop larges (###)
+                    $presence->check_in ? date('H:i', strtotime($presence->check_in)) : '--:--',
+                    $presence->check_out ? date('H:i', strtotime($presence->check_out)) : '--:--',
+                    // Remplacement du point par la virgule pour que WPS reconnaisse un nombre
+                    str_replace('.', ',', $presence->total_hours ?? '0')
+                ], ';');
+            }
+            
+            fclose($file);
+        };
+
+        // 5. Envoi de la réponse avec les bons headers
+        return response()->stream($callback, 200, [
+            "Content-type"        => "text/csv; charset=UTF-8",
+            "Content-Disposition" => "attachment; filename=$filename",
+            "Pragma"              => "no-cache",
+            "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
+            "Expires"             => "0"
+        ]);
+
+    } catch (\Throwable $th) {
+        return response()->json(['error' => 'Erreur lors de l\'export : ' . $th->getMessage()], 500);
+    }
+}
 }
