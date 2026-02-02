@@ -209,7 +209,7 @@ class EmployeeController extends Controller
                 $employee->profile_photo = null;
                 $employee->save();
 
-                Log::info("🗑️ Photo supprimée pour employé #" . $employee->id);
+                Log::info("Photo supprimée pour employé #" . $employee->id);
             }
 
             return response()->json([
@@ -408,6 +408,7 @@ class EmployeeController extends Controller
                 'department_id' => 'nullable|exists:departments,id',
                 'role_ids'      => 'nullable|array',
                 'role_ids.*'    => 'exists:roles,id',
+                'status' => 'sometimes|required|string|in:actif,demission,renvoyer,retraite',
             ]);
 
             return DB::transaction(function () use ($validated, $employee) {

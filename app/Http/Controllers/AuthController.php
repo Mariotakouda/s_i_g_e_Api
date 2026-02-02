@@ -9,6 +9,8 @@ use App\Models\Employee;
 use Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Password;
+use Str;
 use Throwable;
 
 class AuthController extends Controller
@@ -112,4 +114,68 @@ public function updatePassword(Request $request)
 
     return response()->json(['message' => 'Mot de passe mis à jour avec succès.']);
 }
+
+/**
+ * Déconnexion de l'utilisateur (Suppression du token)
+ */
+public function logout(Request $request)
+{
+    try {
+        // Supprime le token actuel utilisé pour la requête
+        $request->user()->currentAccessToken()->delete();
+
+        return response()->json([
+            'message' => 'Déconnexion réussie'
+        ], 200);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'message' => 'Erreur lors de la déconnexion',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
+
+public function sendResetLinkEmail(Request $request)
+{
+    $request->validate(['email' => 'required|email']);
+
+    // Utilise le système natif de Laravel pour générer le token et envoyer le mail
+    $status = Password::sendResetLink($request->only('email'));
+
+    if ($status === Password::RESET_LINK_SENT) {
+        return response()->json(['message' => 'Lien de réinitialisation envoyé par email !'], 200);
+    }
+
+    return response()->json(['message' => 'Impossible d\'envoyer le lien (email introuvable ou erreur serveur).'], 400);
+}
+
+/**
+ * Traite la modification finale du mot de passe
+ */
+public function resetPassword(Request $request)
+{
+    $request->validate([
+        'token' => 'required',
+        'email' => 'required|email',
+        'password' => 'required|string|min:8|confirmed',
+    ]);
+
+    $status = Password::reset(
+        $request->only('email', 'password', 'password_confirmation', 'token'),
+        function ($user, $password) {
+            $user->forceFill([
+                'password' => Hash::make($password),
+                'needs_password_change' => false, // On débloque l'utilisateur
+            ])->setRememberToken(Str::random(60));
+            $user->save();
+        }
+    );
+
+    if ($status === Password::PASSWORD_RESET) {
+        return response()->json(['message' => 'Votre mot de passe a été réinitialisé avec succès.'], 200);
+    }
+
+    return response()->json(['message' => 'Le lien est invalide ou a expiré.'], 400);
+}
+
 }

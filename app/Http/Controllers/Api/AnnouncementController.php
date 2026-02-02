@@ -56,7 +56,7 @@ class AnnouncementController extends Controller
     }
 
     /**
-     * ✅ NOUVELLE MÉTHODE : Annonces pour l'employé connecté (sans pagination)
+     * ✅ Annonces pour l'employé connecté (sans pagination)
      */
     public function myAnnouncements()
     {
@@ -92,19 +92,30 @@ class AnnouncementController extends Controller
     }
 
     /**
-     * ✅ Créer une annonce
+     * 🔥 CORRECTION : Créer une annonce (ADMIN et MANAGER uniquement)
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'title' => 'required|string|max:255',
-            'message' => 'required|string',
-            'department_id' => 'nullable|exists:departments,id',
-            'is_general' => 'boolean'
-        ]);
-
         try {
             $user = Auth::user();
+
+            // 🔥 VÉRIFICATION : Seuls admin et manager peuvent créer
+            if (!$this->canManageAnnouncements($user)) {
+                Log::warning("❌ Tentative de création par un employé non autorisé", [
+                    'user_id' => $user->id,
+                    'user_role' => $user->role
+                ]);
+                return response()->json([
+                    "message" => "Vous n'avez pas les permissions pour créer des annonces."
+                ], 403);
+            }
+
+            $validated = $request->validate([
+                'title' => 'required|string|max:255',
+                'message' => 'required|string',
+                'department_id' => 'nullable|exists:departments,id',
+                'is_general' => 'boolean'
+            ]);
 
             // Vérifier les permissions pour les managers
             if ($user->role === 'manager' || $this->isEmployeeManager($user)) {
@@ -132,13 +143,24 @@ class AnnouncementController extends Controller
                 'message' => $validated['message'],
                 'department_id' => $validated['department_id'] ?? null,
                 'is_general' => $validated['is_general'],
-                'creator_id' => $user->id,
+                'user_id' => $user->id,
+            ]);
+
+            Log::info("✅ Annonce créée", [
+                'announcement_id' => $announcement->id,
+                'created_by' => $user->id,
+                'user_role' => $user->role
             ]);
 
             return response()->json([
                 'message' => 'Annonce créée avec succès',
                 'data' => $announcement->load(['creator', 'department'])
             ], 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                "message" => "Données invalides",
+                "errors" => $e->errors()
+            ], 422);
         } catch (Throwable $e) {
             Log::error("Erreur création annonce: " . $e->getMessage());
             return response()->json([
@@ -180,7 +202,7 @@ class AnnouncementController extends Controller
     }
 
     /**
-     * ✅ Modifier une annonce
+     * 🔥 CORRECTION : Modifier une annonce (ADMIN et MANAGER uniquement)
      */
     public function update(Request $request, Announcement $announcement)
     {
@@ -194,65 +216,181 @@ class AnnouncementController extends Controller
         try {
             $user = Auth::user();
 
-            // Vérifier que l'utilisateur peut modifier cette annonce
-            if ($user->role !== 'admin') {
-                // Seul le créateur ou un admin peut modifier
-                if ($announcement->creator_id !== $user->id) {
+            Log::info("🔍 Tentative de modification d'annonce", [
+                'announcement_id' => $announcement->id,
+                'user_id' => $user->id,
+                'user_role' => $user->role,
+                'announcement_creator_id' => $announcement->user_id,
+                'announcement_department_id' => $announcement->department_id
+            ]);
+
+            // 🔥 VÉRIFICATION : Seuls admin et manager peuvent modifier
+            if (!$this->canManageAnnouncements($user)) {
+                Log::warning("❌ Tentative de modification par un employé non autorisé", [
+                    'user_id' => $user->id,
+                    'user_role' => $user->role
+                ]);
+                return response()->json([
+                    "message" => "Vous n'avez pas les permissions pour modifier des annonces."
+                ], 403);
+            }
+
+            // 🔥 CAS 1: ADMIN - Peut tout modifier
+            if ($user->role === 'admin') {
+                Log::info("✅ Admin - Modification autorisée");
+                $announcement->update($validated);
+
+                return response()->json([
+                    'message' => 'Annonce mise à jour',
+                    'data' => $announcement->load(['creator', 'department'])
+                ], 200);
+            }
+
+            // 🔥 CAS 2: MANAGER - Peut modifier les annonces de son département
+            if ($user->role === 'manager' || $this->isEmployeeManager($user)) {
+                $managerDeptId = $user->employee->department_id ?? null;
+
+                Log::info("🔍 Vérification Manager", [
+                    'manager_dept_id' => $managerDeptId,
+                    'announcement_dept_id' => $announcement->department_id,
+                    'is_creator' => $announcement->user_id === $user->id
+                ]);
+
+                // Le manager peut modifier si:
+                // 1. C'est lui qui a créé l'annonce OU
+                // 2. L'annonce concerne son département
+                $canModify = ($announcement->user_id === $user->id) || 
+                            ($announcement->department_id === $managerDeptId);
+
+                if (!$canModify) {
+                    Log::warning("❌ Manager - Accès refusé", [
+                        'reason' => 'Not creator and not his department'
+                    ]);
                     return response()->json([
-                        "message" => "Vous ne pouvez modifier que vos propres annonces."
+                        "message" => "Vous ne pouvez modifier que vos annonces ou celles de votre département."
                     ], 403);
                 }
 
-                // Manager : vérifier le département
-                if ($user->role === 'manager' || $this->isEmployeeManager($user)) {
-                    $managerDeptId = $user->employee->department_id ?? null;
-
-                    if (
-                        isset($validated['department_id']) &&
-                        $validated['department_id'] !== null &&
-                        $validated['department_id'] !== $managerDeptId
-                    ) {
-                        return response()->json([
-                            "message" => "Vous ne pouvez créer des annonces que pour votre département."
-                        ], 403);
-                    }
+                // Vérifier que si on change le département, c'est toujours le sien
+                if (isset($validated['department_id']) && 
+                    $validated['department_id'] !== null && 
+                    $validated['department_id'] !== $managerDeptId) {
+                    Log::warning("❌ Manager - Tentative de changer vers un autre département");
+                    return response()->json([
+                        "message" => "Vous ne pouvez assigner l'annonce qu'à votre département."
+                    ], 403);
                 }
+
+                Log::info("✅ Manager - Modification autorisée");
+                $announcement->update($validated);
+
+                return response()->json([
+                    'message' => 'Annonce mise à jour',
+                    'data' => $announcement->load(['creator', 'department'])
+                ], 200);
             }
 
-            $announcement->update($validated);
-
+            // 🔥 Si on arrive ici, c'est un problème (ne devrait pas arriver)
+            Log::error("❌ Cas non géré dans update()", [
+                'user_role' => $user->role
+            ]);
             return response()->json([
-                'message' => 'Annonce mise à jour',
-                'data' => $announcement->load(['creator', 'department'])
-            ], 200);
+                "message" => "Erreur de permissions."
+            ], 403);
+
         } catch (Throwable $e) {
-            Log::error("Erreur update announcement: " . $e->getMessage());
+            Log::error("Erreur update announcement: " . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json(["message" => "Erreur interne"], 500);
         }
     }
 
     /**
-     * ✅ Supprimer une annonce
+     * 🔥 CORRECTION : Supprimer une annonce (ADMIN et MANAGER uniquement)
      */
     public function destroy(Announcement $announcement)
     {
         try {
             $user = Auth::user();
 
-            // Seul l'admin ou le créateur peut supprimer
-            if ($user->role !== 'admin' && $announcement->creator_id !== $user->id) {
+            Log::info("🔍 Tentative de suppression d'annonce", [
+                'announcement_id' => $announcement->id,
+                'user_id' => $user->id,
+                'user_role' => $user->role,
+                'announcement_creator_id' => $announcement->user_id
+            ]);
+
+            // 🔥 VÉRIFICATION : Seuls admin et manager peuvent supprimer
+            if (!$this->canManageAnnouncements($user)) {
+                Log::warning("❌ Tentative de suppression par un employé non autorisé", [
+                    'user_id' => $user->id,
+                    'user_role' => $user->role
+                ]);
                 return response()->json([
-                    "message" => "Vous ne pouvez supprimer que vos propres annonces."
+                    "message" => "Vous n'avez pas les permissions pour supprimer des annonces."
                 ], 403);
             }
 
-            $announcement->delete();
+            // Admin peut tout supprimer
+            if ($user->role === 'admin') {
+                Log::info("✅ Admin - Suppression autorisée");
+                $announcement->delete();
+                return response()->json(["message" => "Annonce supprimée"], 204);
+            }
 
-            return response()->json(["message" => "Annonce supprimée"], 204);
+            // Manager peut supprimer les annonces de son département
+            if ($user->role === 'manager' || $this->isEmployeeManager($user)) {
+                $managerDeptId = $user->employee->department_id ?? null;
+                
+                $canDelete = ($announcement->user_id === $user->id) || 
+                            ($announcement->department_id === $managerDeptId);
+
+                if (!$canDelete) {
+                    Log::warning("❌ Manager - Suppression refusée");
+                    return response()->json([
+                        "message" => "Vous ne pouvez supprimer que vos annonces ou celles de votre département."
+                    ], 403);
+                }
+
+                Log::info("✅ Manager - Suppression autorisée");
+                $announcement->delete();
+                return response()->json(["message" => "Annonce supprimée"], 204);
+            }
+
+            // Ne devrait jamais arriver ici
+            return response()->json([
+                "message" => "Erreur de permissions."
+            ], 403);
+
         } catch (Throwable $e) {
             Log::error("Erreur suppression announcement: " . $e->getMessage());
             return response()->json(["message" => "Erreur suppression"], 500);
         }
+    }
+
+    /**
+     * 🔥 NOUVELLE MÉTHODE : Vérifie si l'utilisateur peut gérer les annonces
+     */
+    private function canManageAnnouncements($user): bool
+    {
+        // Admin peut toujours gérer
+        if ($user->role === 'admin') {
+            return true;
+        }
+
+        // Manager peut gérer
+        if ($user->role === 'manager') {
+            return true;
+        }
+
+        // Vérifier si l'employé a un rôle de manager dans la table pivot
+        if ($this->isEmployeeManager($user)) {
+            return true;
+        }
+
+        // Employé simple ne peut pas gérer
+        return false;
     }
 
     /**
@@ -262,8 +400,7 @@ class AnnouncementController extends Controller
     {
         if (!$user->employee) return false;
 
-        return $user->role === 'manager' ||
-            $user->employee->roles()->where('name', 'manager')->exists() ||
+        return $user->employee->roles()->where('name', 'manager')->exists() ||
             \App\Models\Manager::where('employee_id', $user->employee->id)->exists();
     }
 }

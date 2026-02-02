@@ -122,7 +122,7 @@ class PresenceController extends Controller
             $presence = Presence::create([
                 'employee_id' => $employeeId,
                 'date' => $today,
-                'check_in' => now(),
+                'check_in' => now('Africa/Lome'),
                 'status' => 'present'
             ]);
 

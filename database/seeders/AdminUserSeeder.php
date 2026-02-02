@@ -10,19 +10,29 @@ class AdminUserSeeder extends Seeder
 {
     public function run(): void
     {
-        // Vérifie s’il n’existe pas déjà un admin
-        if (!User::where('email', 'admin@gmail.com')->exists()) {
+        $email = 'hodo@gmail.com';
+        $password = 'hodo1234';
+
+        // On cherche l'utilisateur par son email
+        $user = User::where('email', $email)->first();
+
+        if (!$user) {
+            // Création si l'utilisateur n'existe pas
             User::create([
                 'name' => 'TAKOUDA',
-                'email' => 'admin@gmail.com',
-                'password' => Hash::make('admin1234'),
+                'email' => $email,
+                'password' => Hash::make($password),
+                'role' => 'admin', // Assurez-vous que la colonne 'role' existe dans votre table users
+            ]);
+            $this->command->info("Admin créé avec succès : {$email}");
+        } else {
+            // Mise à jour du mot de passe si l'utilisateur existe déjà
+            $user->update([
+                'password' => Hash::make($password),
+                'name' => 'TAKOUDA',
                 'role' => 'admin',
             ]);
-
-            $this->command->info("Admin créé : admin@company.com / admin1234");
-        } else {
-
-            $this->command->warn("Un compte admin existe déjà.");
+            $this->command->info("Le compte {$email} existait déjà. Le mot de passe a été mis à jour.");
         }
     }
 }

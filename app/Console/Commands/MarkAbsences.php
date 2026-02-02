@@ -39,7 +39,7 @@ class MarkAbsences extends Command
             Presence::create([
                 'employee_id' => $employee->id,
                 'date' => $today,
-                'status' => 'absent', // Assurez-vous d'avoir une colonne status
+                'status' => 'absent',
                 'check_in' => null,
                 'check_out' => null
             ]);

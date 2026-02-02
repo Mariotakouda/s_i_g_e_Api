@@ -21,6 +21,7 @@ class Employee extends Model
         'hire_date',
         'salary_base',
         'department_id',
+        'status',
     ];
 
     protected $appends = ['profile_photo_url'];

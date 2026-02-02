@@ -11,32 +11,33 @@ use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\ManagerController;
 use App\Http\Controllers\AuthController;
 
-
-
 //ROUTES PUBLIQUES
 Route::post('/login', [AuthController::class, 'login']);
+Route::post('/forgot-password', [AuthController::class, 'sendResetLinkEmail']);
+Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 
 //ROUTES PROTÉGÉES (Nécessitent d'être connecté)
 Route::middleware('auth:sanctum')->group(function () {
-        Route::get('employees', [EmployeeController::class, 'index']);
+    Route::get('employees', [EmployeeController::class, 'index']);
 
-//AUTHENTIFICATION & PROFIL
+    //AUTHENTIFICATION & PROFIL
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user', [AuthController::class, 'user']);
     Route::get('/me', [EmployeeController::class, 'me']);
     Route::get('/check-manager-status', [EmployeeController::class, 'checkManagerStatus']);
     Route::post('/change-password', [AuthController::class, 'updatePassword']);
 
-//PHOTO DE PROFIL
+    //PHOTO DE PROFIL
     Route::post('/me/profile-photo', [EmployeeController::class, 'uploadPhoto']);
     Route::delete('/me/profile-photo', [EmployeeController::class, 'deletePhoto']);
 
-//ESPACE PERSONNEL (Tout employé)
+    //ESPACE PERSONNEL (Tout employé)
     Route::get('/me/tasks', [TaskController::class, 'myTasks']);
     Route::get('/me/presences', [PresenceController::class, 'myPresences']);
     Route::get('/me/leave-requests', [LeaveRequestController::class, 'myLeaveRequests']);
     Route::get('/me/announcements', [AnnouncementController::class, 'myAnnouncements']);
 
+    // 🔥 CORRECTION : CONSULTATION DES ANNONCES (Tous les utilisateurs)
     Route::get('/announcements', [AnnouncementController::class, 'index']);
     Route::get('/announcements/{announcement}', [AnnouncementController::class, 'show']);
 
@@ -44,31 +45,31 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/presences/{presence}/check-out', [PresenceController::class, 'update']);
     Route::post('/leave-requests', [LeaveRequestController::class, 'store']);
 
-//CONSULTATION TÂCHES (Détails & Rapports)
+    //CONSULTATION TÂCHES (Détails & Rapports)
     Route::get('/tasks/{task}', [TaskController::class, 'show']);
     Route::post('/tasks/{task}/submit-report', [TaskController::class, 'submitReport']);
     Route::post('/tasks/{task}/mark-completed', [TaskController::class, 'markAsCompleted']);
     Route::get('/tasks/{task}/download-file', [TaskController::class, 'downloadTaskFile']);
     Route::get('/tasks/{task}/download-report', [TaskController::class, 'downloadReportFile']);
 
-
-//ROUTES MANAGER & ADMIN (Gestion d'équipe)
+    //ROUTES MANAGER & ADMIN (Gestion d'équipe)
     Route::middleware('is_manager')->group(function () {
 
-//GESTION DES EMPLOYÉS (Lecture seule pour Manager)
+        //GESTION DES EMPLOYÉS (Lecture seule pour Manager)
         Route::get('employees/{employee}', [EmployeeController::class, 'show']);
 
-//GESTION DES TÂCHES (Création/Assignation)
+        //GESTION DES TÂCHES (Création/Assignation)
         Route::get('/tasks', [TaskController::class, 'index']);
         Route::post('/tasks', [TaskController::class, 'store']);
         Route::put('/tasks/{task}', [TaskController::class, 'update']);
         Route::get('/manager/team-tasks', [TaskController::class, 'managerTeamTasks']);
 
-//GESTION DES ANNONCES
+        // 🔥 CORRECTION : GESTION DES ANNONCES (MANAGER + ADMIN uniquement)
         Route::post('/announcements', [AnnouncementController::class, 'store']);
         Route::put('/announcements/{announcement}', [AnnouncementController::class, 'update']);
+        Route::delete('/announcements/{announcement}', [AnnouncementController::class, 'destroy']);
 
-//GESTION DES PRÉSENCES & CONGÉS
+        //GESTION DES PRÉSENCES & CONGÉS
         Route::get('/presences', [PresenceController::class, 'index']);
         Route::get('/leave-requests', [LeaveRequestController::class, 'indexAdmin']);
         Route::put('/leave-requests/{leaveRequest}/approve', [LeaveRequestController::class, 'approve']);
@@ -85,9 +86,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('departments', DepartmentController::class);
         Route::apiResource('roles', RoleController::class);
         Route::apiResource('managers', ManagerController::class);
-
-        // Suppression des annonces
-        Route::delete('/announcements/{announcement}', [AnnouncementController::class, 'destroy']);
 
         // SUPPRESSIONS DÉFINITIVES
         Route::delete('/tasks/{task}', [TaskController::class, 'destroy']);

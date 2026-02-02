@@ -20,6 +20,7 @@ return new class extends Migration
             $table->float('salary_base')->nullable();
             $table->foreignId('department_id')->nullable()->constrained('departments')->onDelete('cascade');
             $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('cascade')->unique();
+            $table->string('status')->default('actif');
             $table->timestamps();
         });
     }
