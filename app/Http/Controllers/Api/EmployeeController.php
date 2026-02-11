@@ -24,6 +24,46 @@ use Throwable;
 class EmployeeController extends Controller
 {
 
+    public function getDashboardSummary()
+    {
+        try {
+            $user = Auth::user();
+            // Utiliser une jointure ou charger uniquement l'essentiel
+            $employeeId = $user->employee->id;
+
+            if (!$employeeId) {
+                return response()->json(["message" => "Profil non trouvé"], 404);
+            }
+
+            // On récupère tout en limitant les colonnes (Select) pour réduire le poids du JSON
+            return response()->json([
+                'presences' => Presence::where('employee_id', $employeeId)
+                    ->select('id', 'date', 'status')
+                    ->latest()
+                    ->take(5)
+                    ->get(),
+                'tasks' => Task::where('employee_id', $employeeId)
+                    ->select('id', 'title', 'due_date', 'status')
+                    ->latest()
+                    ->take(5)
+                    ->get(),
+                'leave_requests' => LeaveRequest::where('employee_id', $employeeId)
+                    ->select('id', 'start_date', 'end_date', 'status')
+                    ->latest()
+                    ->take(5)
+                    ->get(),
+                'announcements' => Announcement::where('is_general', true)
+                    ->orWhere('department_id', $user->employee->department_id)
+                    ->select('id', 'title', 'created_at', 'is_general')
+                    ->latest()
+                    ->take(5)
+                    ->get()
+            ]);
+        } catch (Throwable $e) {
+            return response()->json(["message" => "Erreur", "error" => $e->getMessage()], 500);
+        }
+    }
+
     public function me()
     {
         try {

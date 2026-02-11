@@ -12,59 +12,50 @@ use Throwable;
 
 class PresenceController extends Controller
 {
-    /**
-     * Statistiques de présence
-     */
-    public function stats(Request $request): JsonResponse
-    {
-        try {
-            $query = Presence::query();
-
-            // Si c'est un employé, il ne voit que ses propres stats
-            // Si c'est un admin, il voit tout par défaut (ou vous pouvez ajouter un filtre employee_id)
-            if ($request->user()->role === 'employee') {
-                $query->where('employee_id', $request->user()->employee->id);
-            }
-
-            $presences = $query->latest()->get();
-            $totalHours = $presences->sum('total_hours');
-
-            return response()->json([
-                'total_hours' => round($totalHours, 2),
-                'days_present' => $presences->count(),
-                'history' => $presences
-            ]);
-        } catch (\Throwable $th) {
-            return response()->json(['error' => $th->getMessage()], 500);
-        }
-    }
-
-    public function myPresences()
+    public function myPresences(): JsonResponse
     {
         try {
             $user = Auth::user();
-            Log::info("🔍 myPresences - User:", ['id' => $user->id, 'email' => $user->email]);
+            // Utilisation du cache de relation pour éviter une requête supplémentaire
+            $employeeId = $user->employee->id ?? null;
 
-            $employee = $user->employee;
-
-            if (!$employee) {
-                Log::warning("⚠️ Aucun profil employé pour user " . $user->id);
+            if (!$employeeId) {
                 return response()->json(["message" => "Profil employé introuvable."], 404);
             }
 
-            Log::info("👤 Employee trouvé:", ['id' => $employee->id, 'name' => $employee->first_name]);
-
-            $presences = Presence::where('employee_id', $employee->id)
+            // OPTIMISATION :
+            // 1. Uniquement les colonnes nécessaires
+            // 2. Limite à 10 ou 15 résultats (l'historique complet doit être sur une autre page ou via pagination)
+            $presences = Presence::where('employee_id', $employeeId)
+                ->select('id', 'date', 'check_in', 'check_out', 'total_hours')
                 ->latest()
+                ->limit(15)
                 ->get();
-
-            Log::info("📋 Présences trouvées:", ['count' => $presences->count()]);
 
             return response()->json($presences);
         } catch (Throwable $e) {
-            Log::error("❌ Erreur dans myPresences(): " . $e->getMessage());
-            Log::error($e->getTraceAsString());
-            return response()->json(["message" => "Erreur interne", "error" => $e->getMessage()], 500);
+            return response()->json(["message" => "Erreur interne"], 500);
+        }
+    }
+
+    public function stats(Request $request): JsonResponse
+    {
+        try {
+            $user = $request->user();
+            $employeeId = $user->employee->id;
+
+            // OPTIMISATION : Utiliser l'agrégation SQL (sum/count) au lieu de charger tous les modèles en mémoire
+            $stats = Presence::where('employee_id', $employeeId)
+                ->whereMonth('date', now()->month) // Stats du mois en cours uniquement pour la vitesse
+                ->selectRaw('SUM(total_hours) as total_hours, COUNT(id) as days_present')
+                ->first();
+
+            return response()->json([
+                'total_hours' => round($stats->total_hours ?? 0, 2),
+                'days_present' => $stats->days_present ?? 0,
+            ]);
+        } catch (\Throwable $th) {
+            return response()->json(['error' => 'Erreur stats'], 500);
         }
     }
 
@@ -164,57 +155,56 @@ class PresenceController extends Controller
     }
 
     public function export()
-{
-    try {
-        // 1. Récupération des données avec la relation employee
-        $presences = Presence::with('employee:id,first_name,last_name')
-            ->latest()
-            ->get();
+    {
+        try {
+            // 1. Récupération des données avec la relation employee
+            $presences = Presence::with('employee:id,first_name,last_name')
+                ->latest()
+                ->get();
 
-        if ($presences->isEmpty()) {
-            return response()->json(['message' => 'Aucune donnée à exporter'], 404);
-        }
-
-        $filename = "export_presences_" . date('d-m-Y') . ".csv";
-
-        // 2. Préparation du flux de sortie
-        $callback = function() use($presences) {
-            $file = fopen('php://output', 'w');
-            
-            // Étape capitale : Le BOM UTF-8 (permet à WPS de lire les accents et de voir le fichier)
-            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
-            
-            // 3. Entêtes du tableau (Utilisation du point-virgule pour WPS)
-            fputcsv($file, ['ID', 'Employé', 'Date', 'Arrivée', 'Sortie', 'Heures Totales'], ';');
-
-            // 4. Remplissage des lignes
-            foreach ($presences as $presence) {
-                fputcsv($file, [
-                    $presence->id,
-                    ($presence->employee->first_name ?? '') . ' ' . ($presence->employee->last_name ?? ''),
-                    $presence->date,
-                    // Format court HH:mm pour éviter les colonnes trop larges (###)
-                    $presence->check_in ? date('H:i', strtotime($presence->check_in)) : '--:--',
-                    $presence->check_out ? date('H:i', strtotime($presence->check_out)) : '--:--',
-                    // Remplacement du point par la virgule pour que WPS reconnaisse un nombre
-                    str_replace('.', ',', $presence->total_hours ?? '0')
-                ], ';');
+            if ($presences->isEmpty()) {
+                return response()->json(['message' => 'Aucune donnée à exporter'], 404);
             }
-            
-            fclose($file);
-        };
 
-        // 5. Envoi de la réponse avec les bons headers
-        return response()->stream($callback, 200, [
-            "Content-type"        => "text/csv; charset=UTF-8",
-            "Content-Disposition" => "attachment; filename=$filename",
-            "Pragma"              => "no-cache",
-            "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
-            "Expires"             => "0"
-        ]);
+            $filename = "export_presences_" . date('d-m-Y') . ".csv";
 
-    } catch (\Throwable $th) {
-        return response()->json(['error' => 'Erreur lors de l\'export : ' . $th->getMessage()], 500);
+            // 2. Préparation du flux de sortie
+            $callback = function () use ($presences) {
+                $file = fopen('php://output', 'w');
+
+                // Étape capitale : Le BOM UTF-8 (permet à WPS de lire les accents et de voir le fichier)
+                fprintf($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
+
+                // 3. Entêtes du tableau (Utilisation du point-virgule pour WPS)
+                fputcsv($file, ['ID', 'Employé', 'Date', 'Arrivée', 'Sortie', 'Heures Totales'], ';');
+
+                // 4. Remplissage des lignes
+                foreach ($presences as $presence) {
+                    fputcsv($file, [
+                        $presence->id,
+                        ($presence->employee->first_name ?? '') . ' ' . ($presence->employee->last_name ?? ''),
+                        $presence->date,
+                        // Format court HH:mm pour éviter les colonnes trop larges (###)
+                        $presence->check_in ? date('H:i', strtotime($presence->check_in)) : '--:--',
+                        $presence->check_out ? date('H:i', strtotime($presence->check_out)) : '--:--',
+                        // Remplacement du point par la virgule pour que WPS reconnaisse un nombre
+                        str_replace('.', ',', $presence->total_hours ?? '0')
+                    ], ';');
+                }
+
+                fclose($file);
+            };
+
+            // 5. Envoi de la réponse avec les bons headers
+            return response()->stream($callback, 200, [
+                "Content-type"        => "text/csv; charset=UTF-8",
+                "Content-Disposition" => "attachment; filename=$filename",
+                "Pragma"              => "no-cache",
+                "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
+                "Expires"             => "0"
+            ]);
+        } catch (\Throwable $th) {
+            return response()->json(['error' => 'Erreur lors de l\'export : ' . $th->getMessage()], 500);
+        }
     }
-}
 }

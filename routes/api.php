@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\PresenceController;
 use App\Http\Controllers\Api\LeaveRequestController;
 use App\Http\Controllers\Api\AnnouncementController;
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\ManagerController;
 use App\Http\Controllers\AuthController;
@@ -18,6 +19,8 @@ Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 
 //ROUTES PROTÉGÉES (Nécessitent d'être connecté)
 Route::middleware('auth:sanctum')->group(function () {
+
+    Route::get('/me/dashboard-summary', [EmployeeController::class, 'getDashboardSummary']);
     Route::get('employees', [EmployeeController::class, 'index']);
 
     //AUTHENTIFICATION & PROFIL
@@ -79,6 +82,8 @@ Route::middleware('auth:sanctum')->group(function () {
     //ROUTES ADMIN UNIQUEMENT (Configuration Système)
     Route::middleware('admin')->group(function () {
 
+
+        Route::get('/dashboard-summary', [DashboardController::class, 'index']);
         Route::get('/presences/export', [PresenceController::class, 'export']);
 
         //GESTION COMPLÈTE (CRUD)

@@ -16,53 +16,62 @@ class AnnouncementController extends Controller
      * ✅ Liste des annonces (filtrées selon le rôle)
      */
 
-public function index(Request $request)
-{
-    try {
-        /** @var User $user */
-        $user = Auth::user();
-        $search = $request->query('search', '');
+    public function index(Request $request)
+    {
+        try {
+            /** @var User $user */
+            $user = Auth::user();
+            $search = $request->query('search', '');
 
-        $query = Announcement::with(['creator', 'department', 'employee'])
-            ->orderBy('created_at', 'desc');
+            // OPTIMISATION : Utilisation de simplePaginate() si tu n'as pas besoin 
+            // du nombre total exact à chaque micro-chargement, OU garder paginate
+            // mais avec des colonnes indexées.
+            $query = Announcement::with([
+                'creator:id,name',
+                'department:id,name',
+                'employee:id,first_name,last_name'
+            ])
+                ->select('id', 'title', 'message', 'department_id', 'employee_id', 'user_id', 'is_general', 'created_at')
+                ->latest(); // Raccourci pour orderBy('created_at', 'desc')
 
-        // Filtrage par rôle (votre logique actuelle est correcte)
-        if ($user->role !== 'admin') {
-            $deptId = $user->employee->department_id ?? null;
-            $employeeId = $user->employee->id ?? null;
+            if ($user->role !== 'admin') {
+                // On récupère les IDs une seule fois pour la requête
+                $employee = $user->employee;
+                $deptId = $employee->department_id ?? null;
+                $employeeId = $employee->id ?? null;
 
-            $query->where(function ($q) use ($deptId, $employeeId) {
-                $q->where('is_general', true);
-                if ($deptId) $q->orWhere('department_id', $deptId);
-                if ($employeeId) $q->orWhere('employee_id', $employeeId);
-            });
+                $query->where(function ($q) use ($deptId, $employeeId) {
+                    $q->where('is_general', true);
+                    if ($deptId) $q->orWhere('department_id', $deptId);
+                    if ($employeeId) $q->orWhere('employee_id', $employeeId);
+                });
+            }
+
+            if ($search) {
+                $query->where(function ($q) use ($search) {
+                    // Utilisation de LIKE de manière plus performante
+                    $q->where('title', 'LIKE', "{$search}%") // Commence par... est plus rapide que %...%
+                        ->orWhere('message', 'LIKE', "%{$search}%");
+                });
+            }
+
+            // Réduire à 10 ou 15 éléments par page pour un rendu DOM plus rapide
+            $paginated = $query->paginate(12);
+
+            return response()->json([
+                'data' => $paginated->items(),
+                'meta' => [
+                    'total' => $paginated->total(),
+                    'last_page' => $paginated->lastPage(),
+                    'current_page' => $paginated->currentPage(),
+                    'per_page' => $paginated->perPage(),
+                ]
+            ], 200);
+        } catch (Throwable $e) {
+            Log::error("Erreur index announcements: " . $e->getMessage());
+            return response()->json(["message" => "Erreur interne"], 500);
         }
-
-        if ($search) {
-            $query->where(function ($q) use ($search) {
-                $q->where('title', 'like', "%{$search}%")
-                  ->orWhere('message', 'like', "%{$search}%");
-            });
-        }
-
-        $paginated = $query->paginate(15);
-
-        // ✅ ON RETOURNE UNE STRUCTURE QUE REACT COMPREND BIEN
-        return response()->json([
-            'data' => $paginated->items(),
-            'meta' => [
-                'total' => $paginated->total(),
-                'last_page' => $paginated->lastPage(),
-                'current_page' => $paginated->currentPage(),
-                'per_page' => $paginated->perPage(),
-            ]
-        ], 200);
-
-    } catch (Throwable $e) {
-        Log::error("Erreur index announcements: " . $e->getMessage());
-        return response()->json(["message" => "Erreur interne"], 500);
     }
-}
 
     /**
      * ✅ Annonces pour l'employé connecté (Dashboard)
@@ -78,7 +87,7 @@ public function index(Request $request)
             $announcements = Announcement::with(['creator', 'department'])
                 ->where(function ($q) use ($deptId, $employeeId) {
                     $q->where('is_general', true);
-                    
+
                     if ($deptId) {
                         $q->orWhere('department_id', $deptId);
                     }
@@ -151,7 +160,6 @@ public function index(Request $request)
                 'message' => 'Annonce créée avec succès',
                 'data' => $announcement->load(['creator', 'department', 'employee'])
             ], 201);
-
         } catch (Throwable $e) {
             Log::error("Erreur création annonce: " . $e->getMessage());
             return response()->json(["message" => "Erreur lors de la création"], 500);
@@ -172,8 +180,8 @@ public function index(Request $request)
                 $empId = $user->employee->id ?? null;
 
                 $canView = $announcement->is_general ||
-                           $announcement->department_id === $deptId ||
-                           $announcement->employee_id === $empId;
+                    $announcement->department_id === $deptId ||
+                    $announcement->employee_id === $empId;
 
                 if (!$canView) {
                     return response()->json(["message" => "Accès refusé."], 403);
@@ -204,7 +212,7 @@ public function index(Request $request)
             if ($user->role !== 'admin') {
                 $managerDeptId = $user->employee->department_id ?? null;
                 $canModify = ($announcement->user_id === $user->id) || ($announcement->department_id === $managerDeptId);
-                
+
                 if (!$canModify) {
                     return response()->json(["message" => "Vous ne pouvez modifier que vos annonces."], 403);
                 }
@@ -224,7 +232,6 @@ public function index(Request $request)
                 'message' => 'Annonce mise à jour',
                 'data' => $announcement->load(['creator', 'department', 'employee'])
             ], 200);
-
         } catch (Throwable $e) {
             Log::error("Erreur update announcement: " . $e->getMessage());
             return response()->json(["message" => "Erreur interne"], 500);
@@ -270,6 +277,6 @@ public function index(Request $request)
     {
         if (!$user->employee) return false;
         return $user->employee->roles()->where('name', 'manager')->exists() ||
-               \App\Models\Manager::where('employee_id', $user->employee->id)->exists();
+            \App\Models\Manager::where('employee_id', $user->employee->id)->exists();
     }
 }
