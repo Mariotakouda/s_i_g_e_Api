@@ -13,7 +13,7 @@ use Throwable;
 class AnnouncementController extends Controller
 {
     /**
-     * ✅ Liste des annonces (filtrées selon le rôle)
+     * Liste des annonces (filtrées selon le rôle)
      */
 
     public function index(Request $request)
@@ -74,7 +74,7 @@ class AnnouncementController extends Controller
     }
 
     /**
-     * ✅ Annonces pour l'employé connecté (Dashboard)
+     * Annonces pour l'employé connecté (Dashboard)
      */
     public function myAnnouncements()
     {
@@ -111,7 +111,7 @@ class AnnouncementController extends Controller
     }
 
     /**
-     * ✅ Créer une annonce (ADMIN et MANAGER uniquement)
+     * Créer une annonce (ADMIN et MANAGER uniquement)
      */
     public function store(Request $request)
     {
@@ -167,7 +167,7 @@ class AnnouncementController extends Controller
     }
 
     /**
-     * ✅ Afficher une annonce
+     * Afficher une annonce
      */
     public function show(Announcement $announcement)
     {
@@ -196,7 +196,7 @@ class AnnouncementController extends Controller
     }
 
     /**
-     * ✅ Modifier une annonce
+     * Modifier une annonce
      */
     public function update(Request $request, Announcement $announcement)
     {
@@ -239,7 +239,7 @@ class AnnouncementController extends Controller
     }
 
     /**
-     * ✅ Supprimer une annonce
+     * Supprimer une annonce
      */
     public function destroy(Announcement $announcement)
     {

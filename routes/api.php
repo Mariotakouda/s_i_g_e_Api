@@ -95,6 +95,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // SUPPRESSIONS DÉFINITIVES
         Route::delete('/tasks/{task}', [TaskController::class, 'destroy']);
         Route::delete('/leave-requests/{id}', [LeaveRequestController::class, 'destroy']);
+        Route::delete('/leave-requests/{leaveRequest}', [\App\Http\Controllers\Api\AdminLeaveRequestController::class, 'destroy']);
         Route::delete('/presences/{id}', [PresenceController::class, 'destroy']);
     });
 });

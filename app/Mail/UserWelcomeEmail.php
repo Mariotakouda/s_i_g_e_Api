@@ -12,9 +12,9 @@ class UserWelcomeEmail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    public $name;     // Unifié
+    public $name;     
     public $password;
-    public $email;    // Ajouté pour la vue
+    public $email; 
 
     public function __construct($name, $password, $email)
     {

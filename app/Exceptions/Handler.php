@@ -18,15 +18,8 @@ class Handler extends ExceptionHandler
             //
         });
     }
-
-    /**
-     * Convertir une exception d'authentification en réponse JSON pour l'API
-     * 
-     * CORRECTION: Ceci empêche l'erreur "Route [login] not defined"
-     */
     protected function unauthenticated($request, AuthenticationException $exception)
     {
-        // Si c'est une requête API, retourner JSON au lieu de rediriger
         if ($request->expectsJson() || $request->is('api/*')) {
             return response()->json([
                 'message' => 'Non authentifié.',
@@ -34,8 +27,7 @@ class Handler extends ExceptionHandler
             ], 401);
         }
 
-        // Pour les requêtes web normales, rediriger vers login
-        // (seulement si vous avez une route 'login' définie)
+       
         return redirect()->guest('/login');
     }
 }

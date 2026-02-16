@@ -86,7 +86,7 @@ class EmployeeController extends Controller
     }
 
     /**
-     * ✅ NOUVELLE MÉTHODE : Vérifier si l'utilisateur est manager
+     * NOUVELLE MÉTHODE : Vérifier si l'utilisateur est manager
      */
     public function checkManagerStatus()
     {
@@ -144,13 +144,13 @@ class EmployeeController extends Controller
      * Upload photo de profil
      */
     /**
-     * ✅ Upload photo de profil - VERSION CORRIGÉE
+     * Upload photo de profil - VERSION CORRIGÉE
      * Route: POST /api/me/profile-photo
      */
     public function uploadPhoto(Request $request)
     {
-        Log::info("🖼️ === DÉBUT UPLOAD PHOTO ===");
-        Log::info("📦 Données reçues:", [
+        Log::info(" === DÉBUT UPLOAD PHOTO ===");
+        Log::info("Données reçues:", [
             'all_keys' => array_keys($request->all()),
             'has_profile_photo' => $request->hasFile('profile_photo'),
             'has_photo' => $request->hasFile('photo'),
@@ -161,49 +161,49 @@ class EmployeeController extends Controller
             $employee = Auth::user()->employee;
 
             if (!$employee) {
-                Log::warning("❌ Aucun profil employé");
+                Log::warning("Aucun profil employé");
                 return response()->json(["message" => "Profil employé introuvable."], 404);
             }
 
-            Log::info("👤 Employé:", [
+            Log::info("Employé:", [
                 'id' => $employee->id,
                 'nom' => $employee->first_name . ' ' . $employee->last_name
             ]);
 
-            // ✅ VALIDATION : Accepter 'profile_photo' (pas 'photo')
+            // VALIDATION : Accepter 'profile_photo' (pas 'photo')
             $request->validate([
                 'profile_photo' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048'
             ]);
 
-            Log::info("✅ Validation OK");
+            Log::info("Validation OK");
 
             // Supprimer l'ancienne photo
             if ($employee->profile_photo) {
-                Log::info("🗑️ Suppression ancienne photo:", ['path' => $employee->profile_photo]);
+                Log::info("Suppression ancienne photo:", ['path' => $employee->profile_photo]);
                 Storage::disk('public')->delete($employee->profile_photo);
             }
 
             // Sauvegarder la nouvelle photo
             $file = $request->file('profile_photo');
-            Log::info("📁 Fichier:", [
+            Log::info("Fichier:", [
                 'original_name' => $file->getClientOriginalName(),
                 'size' => $file->getSize() . ' bytes',
                 'mime' => $file->getMimeType()
             ]);
 
             $path = $file->store('profile_photos', 'public');
-            Log::info("💾 Sauvegarde:", ['path' => $path]);
+            Log::info("Sauvegarde:", ['path' => $path]);
 
             // Mettre à jour la BDD
             $employee->profile_photo = $path;
             $employee->save();
 
-            Log::info("✅ BDD mise à jour");
+            Log::info("BDD mise à jour");
 
             // L'URL est générée automatiquement par l'accessor
             $url = $employee->profile_photo_url;
 
-            Log::info("🎉 === UPLOAD RÉUSSI ===", ['url' => $url]);
+            Log::info(" === UPLOAD RÉUSSI ===", ['url' => $url]);
 
             return response()->json([
                 "message" => "Photo de profil mise à jour avec succès",
@@ -212,13 +212,13 @@ class EmployeeController extends Controller
                 "employee" => $employee->fresh(['department', 'roles'])
             ], 200);
         } catch (\Illuminate\Validation\ValidationException $e) {
-            Log::error("❌ Validation échouée:", $e->errors());
+            Log::error(" Validation échouée:", $e->errors());
             return response()->json([
                 "message" => "Fichier invalide",
                 "errors" => $e->errors()
             ], 422);
         } catch (Throwable $e) {
-            Log::error("❌ ERREUR CRITIQUE:", [
+            Log::error("ERREUR CRITIQUE:", [
                 'message' => $e->getMessage(),
                 'file' => $e->getFile(),
                 'line' => $e->getLine()
@@ -232,7 +232,7 @@ class EmployeeController extends Controller
     }
 
     /**
-     * ✅ Supprimer photo de profil
+     * Supprimer photo de profil
      * Route: DELETE /api/me/profile-photo
      */
     public function deletePhoto()
@@ -257,7 +257,7 @@ class EmployeeController extends Controller
                 "employee" => $employee->fresh(['department', 'roles'])
             ], 200);
         } catch (Throwable $e) {
-            Log::error("❌ Erreur suppression photo:", ['error' => $e->getMessage()]);
+            Log::error("Erreur suppression photo:", ['error' => $e->getMessage()]);
             return response()->json(["message" => "Erreur lors de la suppression"], 500);
         }
     }
@@ -265,7 +265,7 @@ class EmployeeController extends Controller
     // --- ADMIN CRUD ---
 
     /**
-     * ✅ Liste des employés filtrée selon le rôle (CORRIGÉ)
+     * Liste des employés filtrée selon le rôle (CORRIGÉ)
      */
     public function index(): JsonResponse
     {
@@ -273,7 +273,7 @@ class EmployeeController extends Controller
             $user = Auth::user();
             $userRole = strtolower($user->role);
 
-            Log::info('📋 EmployeeController::index - Début', [
+            Log::info('EmployeeController::index - Début', [
                 'user_id' => $user->id,
                 'user_role' => $user->role,
                 'user_role_normalized' => $userRole,
@@ -309,7 +309,7 @@ class EmployeeController extends Controller
                 }
             }
 
-            Log::info('🔍 Vérification des rôles', [
+            Log::info('Vérification des rôles', [
                 'is_admin' => $isAdmin,
                 'is_manager' => $isManager
             ]);
@@ -329,7 +329,7 @@ class EmployeeController extends Controller
                 $managerEmployeeId = $user->employee->id;
 
                 if (!$managerDeptId) {
-                    Log::warning('⚠️ Manager sans département', [
+                    Log::warning('Manager sans département', [
                         'user_id' => $user->id,
                         'employee_id' => $user->employee->id
                     ]);
@@ -339,7 +339,7 @@ class EmployeeController extends Controller
                     ], 200);
                 }
 
-                Log::info('🎯 Filtrage par département', [
+                Log::info('Filtrage par département', [
                     'department_id' => $managerDeptId,
                     'excluding_manager_id' => $managerEmployeeId
                 ]);
@@ -351,14 +351,14 @@ class EmployeeController extends Controller
 
             $employees = $query->orderBy('last_name')->get();
 
-            Log::info('✅ Employés récupérés', [
+            Log::info('Employés récupérés', [
                 'count' => $employees->count(),
                 'filtered_by_department' => $isManager && !$isAdmin
             ]);
 
             return response()->json(['data' => $employees], 200);
         } catch (Throwable $e) {
-            Log::error("❌ Erreur dans EmployeeController::index", [
+            Log::error("Erreur dans EmployeeController::index", [
                 'message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);

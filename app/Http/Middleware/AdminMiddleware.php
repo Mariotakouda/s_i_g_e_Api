@@ -21,20 +21,20 @@ class AdminMiddleware
         $userRole = strtolower($user->role);
         $hasEmployee = $user->employee()->exists();
 
-        Log::info('🔐 Vérification accès', [
+        Log::info('Vérification accès', [
             'user_id'        => $user->id,
             'role_original'  => $user->role,
             'role_normalisé' => $userRole,
             'has_employee'   => $hasEmployee,
         ]);
 
-        // ✅ Vérification directe sur le rôle utilisateur
+        // Vérification directe sur le rôle utilisateur
         if (in_array($userRole, ['admin', 'manager'])) {
-            Log::info('✅ Accès autorisé via rôle utilisateur', ['role' => $user->role]);
+            Log::info('Accès autorisé via rôle utilisateur', ['role' => $user->role]);
             return $next($request);
         }
 
-        // ✅ Vérification via employé
+        // Vérification via employé
         if ($hasEmployee) {
             $employee = $user->employee;
 
@@ -51,7 +51,7 @@ class AdminMiddleware
             ]);
 
             if ($hasManagerRole || $existsInManagersTable) {
-                Log::info('✅ Accès autorisé via rôle employé');
+                Log::info('Accès autorisé via rôle employé');
                 return $next($request);
             }
         }

@@ -29,7 +29,6 @@ class LeaveRequestController extends Controller
      */
     public function index(): JsonResponse
     {
-        return response()->json(LeaveRequest::with('employee')->latest()->paginate(15));
         try {
             $employee = Auth::user()->employee;
             if (!$employee) {
@@ -165,4 +164,16 @@ class LeaveRequestController extends Controller
             return response()->json(["message" => "Erreur lors de la soumission de la demande.", "error" => $e->getMessage()], 500);
         }
     }
+
+    public function destroy($id): JsonResponse
+{
+    try {
+        $leaveRequest = LeaveRequest::findOrFail($id);
+        $leaveRequest->delete();
+        return response()->json(null, 204);
+    } catch (Throwable $e) {
+        Log::error("Erreur suppression: " . $e->getMessage());
+        return response()->json(["message" => "Erreur lors de la suppression"], 500);
+    }
+}
 }

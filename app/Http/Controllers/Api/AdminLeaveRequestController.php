@@ -16,7 +16,6 @@ class AdminLeaveRequestController extends Controller
     public function index(): JsonResponse
     {
         try {
-            // Charge la liste avec l'employé associé (nom et id) pour l'affichage
             $requests = LeaveRequest::with('employee:id,first_name,last_name,email') 
                 ->latest()
                 ->get();
@@ -80,7 +79,7 @@ class AdminLeaveRequestController extends Controller
     public function destroy(LeaveRequest $leaveRequest): JsonResponse
     {
         try {
-            // 🔒 Vous pouvez ajouter ici une vérification de statut si vous ne voulez
+            // Vous pouvez ajouter ici une vérification de statut si vous ne voulez
             // pas que les demandes "pending" soient supprimées, mais généralement
             // l'administrateur a le droit de supprimer n'importe quelle demande.
 
